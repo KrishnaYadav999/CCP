@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Green CRM
 
 MERN CRM with admin-created users, role assignment, and OTP email login.
@@ -38,3 +39,6 @@ Backend: `http://localhost:5000`
 ## Roles
 
 `operation`, `admin`, `superadmin`, `manager`, `compliance`, `sales`
+=======
+# CRM
+>>>>>>> 98b9c8806fb0af9076ad79cd2e2ce7b7cfe74544
