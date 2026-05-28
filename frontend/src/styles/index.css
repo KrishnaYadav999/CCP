@@ -1,0 +1,84 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root{
+  --primary: #059669;
+  font-family: "Nunito", sans-serif !important;
+}
+
+* {
+  box-sizing: border-box;
+  font-family: "Nunito", sans-serif !important;
+}
+
+html,
+body,
+#root{
+  margin: 0;
+  min-height: 100%;
+  background-color: #ecfdf5;
+  font-family: "Nunito", sans-serif !important;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: "Nunito", sans-serif !important;
+}
+
+.header-brand{ color: var(--primary) }
+
+.btn-lift {
+  transform: translateY(0) scale(1);
+  transition-property: transform, box-shadow, background-color, border-color, color, opacity;
+  transition-duration: 240ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.btn-lift:hover:not(:disabled) {
+  transform: translateY(-2px) scale(1.01);
+}
+
+.btn-lift:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+}
+
+.form-input {
+  min-height: 50px;
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid #d7dee8;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+  padding: 0 16px;
+  font-weight: 700;
+  color: #0f172a;
+  outline: none;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.02);
+  transition: border-color 220ms ease, box-shadow 220ms ease, transform 220ms ease, background-color 220ms ease;
+}
+
+.form-input:focus {
+  border-color: #059669;
+  background: #ffffff;
+  box-shadow: 0 0 0 4px #d1fae5, 0 12px 24px rgba(15, 118, 110, 0.08);
+  transform: translateY(-1px);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-toast-in {
+  animation: toast-in 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
