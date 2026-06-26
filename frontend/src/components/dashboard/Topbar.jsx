@@ -32,7 +32,7 @@ export default function Topbar({ currentUser, onOpenProfile, onOpenSidebar, onLo
           <div className="relative hidden w-full max-w-xl md:block">
             <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
             <input
-              placeholder="Search clients, users, visas..."
+              placeholder="Search leads, clients, users..."
               className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-12 pr-4 font-semibold outline-none transition duration-300 hover:border-emerald-200 focus:border-emerald-500 focus:bg-white focus:shadow-lg focus:shadow-emerald-900/10 focus:ring-4 focus:ring-emerald-100"
             />
           </div>
@@ -51,7 +51,7 @@ export default function Topbar({ currentUser, onOpenProfile, onOpenSidebar, onLo
               aria-label="Open account menu"
             >
               <div className="hidden text-right sm:block">
-                <p className="font-black text-slate-900">{currentUser?.name || 'CRM User'}</p>
+                <p className="font-black text-slate-900">{currentUser?.name || 'CCP User'}</p>
                 <p className="text-sm font-semibold text-slate-500">{roleLabels[currentUser?.role] || 'Consultant'}</p>
               </div>
               <div className="grid h-11 w-11 place-items-center overflow-hidden rounded-full bg-gradient-to-br from-teal-700 to-sky-600 font-black text-white shadow-lg shadow-teal-700/20 ring-4 ring-teal-50">
@@ -66,7 +66,7 @@ export default function Topbar({ currentUser, onOpenProfile, onOpenSidebar, onLo
                     {currentUser?.avatarUrl ? <img src={currentUser.avatarUrl} alt={currentUser?.name || 'User'} className="h-full w-full object-cover" /> : initial}
                   </div>
                   <div className="min-w-0">
-                    <p className="truncate font-black text-slate-950">{currentUser?.name || 'CRM User'}</p>
+                    <p className="truncate font-black text-slate-950">{currentUser?.name || 'CCP User'}</p>
                     <p className="truncate text-sm font-bold text-slate-500">{currentUser?.email}</p>
                     <p className="mt-1 text-xs font-black uppercase tracking-[0.12em] text-teal-700">{roleLabels[currentUser?.role] || currentUser?.role}</p>
                   </div>

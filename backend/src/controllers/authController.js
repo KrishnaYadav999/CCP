@@ -2,7 +2,14 @@ const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { sendMail } = require('../utils/mailer');
+const { syncUserToCrm } = require('../utils/crmUserSync');
 const { ROLES } = require('../constants/roles');
+const { getVisibleUserIds, hasFullAccess } = require('../utils/visibilityScope');
+
+function readOptionalId(value) {
+  const raw = String(value || '').trim();
+  return raw || undefined;
+}
 
 function generateOtp() {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -55,13 +62,14 @@ exports.requestOtp = async (req, res) => {
   user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
   await user.save();
 
-  const html = `<p>Your e-Connect login OTP is <b>${otp}</b>.</p><p>It expires in 10 minutes.</p>`;
+  const html = `<p>Your CCP login OTP is <b>${otp}</b>.</p><p>It expires in 10 minutes.</p>`;
   try {
     await sendMail(user.email, 'Your Login OTP', html);
   } catch (err) {
     console.error('Mail error', err);
     if (process.env.NODE_ENV !== 'production') {
-      return res.status(500).json({ error: 'Could not send OTP email. Check SMTP env settings.' });
+      console.log(`Development OTP for ${user.email}: ${otp}`);
+      return res.json({ ok: true, message: 'OTP generated. SMTP failed in development.', devOtp: otp });
     }
   }
   return res.json({ ok: true, message: 'OTP sent if email exists' });
@@ -96,8 +104,12 @@ exports.verifyOtp = async (req, res) => {
 exports.createUserByAdmin = async (req, res) => {
   const name = String(req.body.name || '').trim();
   const email = String(req.body.email || '').toLowerCase().trim();
+  const password = String(req.body.password || '');
   const role = String(req.body.role || '').trim();
   const team = String(req.body.team || 'No team assigned').trim();
+  const teamId = String(req.body.teamId || '').trim();
+  const managerId = readOptionalId(req.body.managerId);
+  const operationHeadId = readOptionalId(req.body.operationHeadId);
   const isActive = req.body.isActive === undefined ? true : Boolean(req.body.isActive);
   let avatarUrl = '';
 
@@ -108,12 +120,35 @@ exports.createUserByAdmin = async (req, res) => {
   }
 
   if (!email || !role) return res.status(400).json({ error: 'Email and role required' });
+  if (!password || password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
   if (!ROLES.includes(role)) return res.status(400).json({ error: 'Invalid role' });
   let existing = await User.findOne({ email });
   if (existing) return res.status(400).json({ error: 'User already exists' });
-  const user = new User({ name, email, role, team, isActive, avatarUrl, createdBy: req.user?._id });
+  const user = new User({
+    name,
+    email,
+    password: await bcrypt.hash(password, 10),
+    role,
+    team,
+    teamId,
+    managerId,
+    operationHeadId,
+    isActive,
+    avatarUrl,
+    source: 'ccp',
+    createdBy: req.user?._id
+  });
   await user.save();
-  res.status(201).json({ ok: true, user: publicUser(user) });
+
+  let crmSync = { ok: true };
+  try {
+    crmSync = await syncUserToCrm('create', user, { password });
+  } catch (err) {
+    console.error('CRM user create sync failed', err.message);
+    crmSync = { ok: false, error: err.message };
+  }
+
+  res.status(201).json({ ok: true, user: publicUser(user), crmSync });
 };
 
 exports.updateUserByAdmin = async (req, res) => {
@@ -122,6 +157,9 @@ exports.updateUserByAdmin = async (req, res) => {
   const email = String(req.body.email || '').toLowerCase().trim();
   const role = String(req.body.role || '').trim();
   const team = String(req.body.team || 'No team assigned').trim();
+  const teamId = String(req.body.teamId || '').trim();
+  const managerId = readOptionalId(req.body.managerId);
+  const operationHeadId = readOptionalId(req.body.operationHeadId);
   const isActive = req.body.isActive === undefined ? true : Boolean(req.body.isActive);
   let avatarUrl;
 
@@ -144,11 +182,23 @@ exports.updateUserByAdmin = async (req, res) => {
   user.email = email;
   user.role = role;
   user.team = team;
+  user.teamId = teamId;
+  user.managerId = managerId;
+  user.operationHeadId = operationHeadId;
   user.isActive = isActive;
   if (req.body.avatarUrl !== undefined) user.avatarUrl = avatarUrl;
+  user.source = user.source || 'ccp';
   await user.save();
 
-  res.json({ ok: true, user: publicUser(user) });
+  let crmSync = { ok: true };
+  try {
+    crmSync = await syncUserToCrm('update', user);
+  } catch (err) {
+    console.error('CRM user update sync failed', err.message);
+    crmSync = { ok: false, error: err.message };
+  }
+
+  res.json({ ok: true, user: publicUser(user), crmSync });
 };
 
 exports.me = async (req, res) => {
@@ -217,14 +267,32 @@ exports.listUsers = async (req, res) => {
   res.json({ ok: true, users });
 };
 
+exports.listAssignableUsers = async (req, res) => {
+  const query = { isActive: true };
+  if (!hasFullAccess(req.user)) {
+    const visibleUserIds = await getVisibleUserIds(req.user);
+    query._id = { $in: visibleUserIds };
+  }
+
+  const users = await User.find(query)
+    .select('name email crmUserId source avatarUrl role team teamId managerId operationHeadId isActive createdAt updatedAt')
+    .sort({ name: 1, email: 1 });
+  res.json({ ok: true, users });
+};
+
 function publicUser(user) {
   return {
     id: user._id,
+    crmUserId: user.crmUserId,
+    source: user.source,
     name: user.name,
     email: user.email,
     avatarUrl: user.avatarUrl,
     role: user.role,
     team: user.team,
+    teamId: user.teamId,
+    managerId: user.managerId,
+    operationHeadId: user.operationHeadId,
     isActive: user.isActive,
     lastLogin: user.lastLogin,
     createdAt: user.createdAt,

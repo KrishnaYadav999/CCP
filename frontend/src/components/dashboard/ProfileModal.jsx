@@ -80,7 +80,7 @@ export default function ProfileModal({ user, saving, onClose, onLogout, onSave, 
               {(user?.name || user?.email || 'U').slice(0, 1).toUpperCase()}
             </div>
             <div className="mt-6 text-center">
-              <p className="text-xl font-black">{user?.name || 'CRM User'}</p>
+              <p className="text-xl font-black">{user?.name || 'CCP User'}</p>
               <p className="mt-1 break-words text-sm font-bold text-emerald-50">{user?.email}</p>
               <span className="mt-4 inline-flex rounded-full bg-white/15 px-4 py-2 text-xs font-black uppercase tracking-[0.14em]">
                 {roleLabels[user?.role] || user?.role}

@@ -138,15 +138,21 @@ export default function AdminDashboard() {
       const response = await api.post('/auth/admin/create-user', {
         name,
         email: form.email,
+        password: form.password,
         avatarUrl: form.avatarUrl,
         role: form.role,
         team: form.team,
+        teamId: form.teamId,
+        managerId: form.managerId,
+        operationHeadId: form.operationHeadId,
         isActive: form.isActive
       })
       setUsers((prevUsers) => [response.data.user, ...prevUsers])
       setForm(defaultUserForm)
       setModalOpen(false)
-      setNotice('New user added successfully. They can login with OTP from the sign-in page.')
+      setNotice(response.data.crmSync?.ok === false
+        ? `New user added in CCP, but CRM sync failed: ${response.data.crmSync.error}`
+        : 'New user added successfully. They can login with OTP from the sign-in page.')
     } catch (err) {
       setError(err?.response?.data?.error || 'Unable to create user')
     } finally {
@@ -172,6 +178,9 @@ export default function AdminDashboard() {
         avatarUrl: editForm.avatarUrl,
         role: editForm.role,
         team: editForm.team,
+        teamId: editForm.teamId,
+        managerId: editForm.managerId,
+        operationHeadId: editForm.operationHeadId,
         isActive: editForm.isActive
       })
       const updatedUser = response.data.user
@@ -180,7 +189,9 @@ export default function AdminDashboard() {
       )
       setEditingUser(null)
       setEditForm(defaultUserForm)
-      setNotice('User updated successfully.')
+      setNotice(response.data.crmSync?.ok === false
+        ? `User updated in CCP, but CRM sync failed: ${response.data.crmSync.error}`
+        : 'User updated successfully.')
     } catch (err) {
       setError(err?.response?.data?.error || 'Unable to update user')
     } finally {
@@ -242,6 +253,9 @@ export default function AdminDashboard() {
       avatarUrl: user.avatarUrl || '',
       role: user.role || 'operation',
       team: user.team || 'No team assigned',
+      teamId: user.teamId || '',
+      managerId: user.managerId || '',
+      operationHeadId: user.operationHeadId || '',
       isActive: Boolean(user.isActive)
     })
   }
@@ -264,7 +278,7 @@ export default function AdminDashboard() {
       <div className="grid min-h-screen place-items-center bg-emerald-50 px-6 text-center">
         <div>
           <RefreshCw className="mx-auto h-8 w-8 animate-spin text-emerald-600" />
-          <p className="mt-4 font-black text-emerald-800">Loading CRM...</p>
+          <p className="mt-4 font-black text-emerald-800">Loading CCP...</p>
         </div>
       </div>
     )
@@ -274,7 +288,7 @@ export default function AdminDashboard() {
     <main className="min-h-screen bg-[#eef7f5] text-slate-900">
       <div className="flex min-h-screen">
         <aside
-          className={`fixed inset-y-0 left-0 z-40 w-[296px] border-r border-emerald-100 bg-white shadow-xl shadow-emerald-900/5 transition-all duration-300 ease-out lg:sticky lg:top-0 lg:h-screen lg:self-start lg:translate-x-0 ${
+          className={`fixed inset-y-0 left-0 z-40 w-[296px] border-r border-emerald-100 bg-white shadow-xl shadow-emerald-900/5 transition-all duration-300 ease-out lg:translate-x-0 ${
             sidebarCollapsed ? 'lg:w-[84px]' : 'lg:w-[296px]'
           } ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
         >
@@ -296,7 +310,7 @@ export default function AdminDashboard() {
           />
         )}
 
-        <section className="min-w-0 flex-1">
+        <section className={`min-w-0 flex-1 transition-all duration-300 ease-out ${sidebarCollapsed ? 'lg:ml-[84px]' : 'lg:ml-[296px]'}`}>
           <Topbar
             currentUser={currentUser}
             onOpenProfile={() => setProfileOpen(true)}
@@ -319,19 +333,23 @@ export default function AdminDashboard() {
                     <ArrowLeft className="h-5 w-5" />
                   </button>
                   <div>
-                    <p className="text-sm font-black uppercase tracking-[0.18em] text-emerald-700">User Management</p>
-                    <h1 className="mt-1 text-3xl font-black text-slate-950">Users</h1>
+                    <p className="text-sm font-black uppercase tracking-[0.18em] text-emerald-700">Admin User Master</p>
+                    <h1 className="mt-1 text-3xl font-black text-slate-950">Admin Users</h1>
                   </div>
                 </div>
 
                 {canManageUsers && (
                   <button
                     type="button"
-                    onClick={() => setModalOpen(true)}
+                    onClick={() => {
+                      setError('')
+                      setNotice('')
+                      setModalOpen(true)
+                    }}
                     className="btn-lift group inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-700 to-teal-700 px-5 py-3 font-black text-white shadow-lg shadow-emerald-700/20 transition"
                   >
                     <Plus className="h-5 w-5 transition duration-300 group-hover:rotate-90" />
-                    Add New User
+                    Create Admin User
                   </button>
                 )}
               </div>
@@ -394,7 +412,7 @@ export default function AdminDashboard() {
                     const name = splitName(user.name)
                     const userKey = user._id || user.id
                     const displayName = user.name || `${name.firstName} ${name.lastName}`.trim()
-                    const role = roleLabels[user.role] || user.role || 'CRM User'
+                    const role = roleLabels[user.role] || user.role || 'CCP User'
                     const team = user.team || 'No team assigned'
                     const hiredDate = formatShortDate(user.createdAt || user.updatedAt)
                     const initial = (displayName || user.email || 'U').slice(0, 1).toUpperCase()
@@ -508,6 +526,7 @@ export default function AdminDashboard() {
         <AddUserModal
           form={form}
           saving={saving}
+          error={error}
           onChange={setForm}
           onClose={closeModal}
           onSubmit={handleCreateUser}

@@ -15,7 +15,7 @@ export default function ProtectedRoute({ children }) {
   }, [])
 
   if (state.loading) {
-    return <div className="grid min-h-screen place-items-center bg-emerald-50 font-bold text-emerald-700">Loading CRM...</div>
+    return <div className="grid min-h-screen place-items-center bg-emerald-50 font-bold text-emerald-700">Loading CCP...</div>
   }
 
   return state.allowed ? children : <Navigate to="/" replace />

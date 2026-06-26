@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { ImagePlus, Trash2, X } from 'lucide-react'
 import { defaultTeams, roles, roleLabels } from '../../constants/dashboard'
 
-export default function AddUserModal({ form, saving, onChange, onClose, onSubmit }) {
+export default function AddUserModal({ form, saving, error, onChange, onClose, onSubmit }) {
   const [teams, setTeams] = useState(defaultTeams)
   const [creatingTeam, setCreatingTeam] = useState(false)
   const [teamDraft, setTeamDraft] = useState({ name: '', description: '' })
@@ -27,6 +27,10 @@ export default function AddUserModal({ form, saving, onChange, onClose, onSubmit
     if (!file) return
 
     if (!file.type.startsWith('image/')) return
+    if (file.size > 2 * 1024 * 1024) {
+      window.alert('Profile image must be under 2MB.')
+      return
+    }
 
     const reader = new FileReader()
     reader.onload = () => {
@@ -43,8 +47,8 @@ export default function AddUserModal({ form, saving, onChange, onClose, onSubmit
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-black text-slate-950">Add New User</h2>
-            <p className="mt-1 text-sm font-semibold text-slate-500">Create CRM access with OTP login.</p>
+            <h2 className="text-2xl font-black text-slate-950">Create Admin User</h2>
+            <p className="mt-1 text-sm font-semibold text-slate-500">Create CCP access with OTP login.</p>
           </div>
           <button
             type="button"
@@ -105,6 +109,23 @@ export default function AddUserModal({ form, saving, onChange, onClose, onSubmit
             <input type="email" value={form.email} onChange={(event) => onChange({ ...form, email: event.target.value })} required className="form-input" />
           </Field>
         </div>
+
+        <div className="mt-5">
+          <Field label="Password">
+            <input
+              type="password"
+              value={form.password}
+              onChange={(event) => onChange({ ...form, password: event.target.value })}
+              minLength={8}
+              required
+              placeholder="Admin set password"
+              className="form-input"
+            />
+          </Field>
+          <p className="mt-2 text-xs font-bold text-slate-500">User will login with this password and OTP verification.</p>
+        </div>
+
+        {error && <p className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</p>}
 
         <div className="mt-5 grid gap-5 sm:grid-cols-2">
           <Field label="Role">
@@ -175,6 +196,33 @@ export default function AddUserModal({ form, saving, onChange, onClose, onSubmit
               </div>
             </div>
           )}
+        </div>
+
+        <div className="mt-5 grid gap-5 sm:grid-cols-3">
+          <Field label="Team ID">
+            <input
+              value={form.teamId || ''}
+              onChange={(event) => onChange({ ...form, teamId: event.target.value })}
+              placeholder="CRM team id"
+              className="form-input"
+            />
+          </Field>
+          <Field label="Manager ID">
+            <input
+              value={form.managerId || ''}
+              onChange={(event) => onChange({ ...form, managerId: event.target.value })}
+              placeholder="Manager user id"
+              className="form-input"
+            />
+          </Field>
+          <Field label="Operation Head ID">
+            <input
+              value={form.operationHeadId || ''}
+              onChange={(event) => onChange({ ...form, operationHeadId: event.target.value })}
+              placeholder="Operation head id"
+              className="form-input"
+            />
+          </Field>
         </div>
 
         <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">

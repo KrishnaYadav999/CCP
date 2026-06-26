@@ -7,7 +7,10 @@ const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT) || 587,
   secure: process.env.SMTP_SECURE === 'true',
-  auth: mailUser && mailPass ? { user: mailUser, pass: mailPass } : undefined
+  auth: mailUser && mailPass ? { user: mailUser, pass: mailPass } : undefined,
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 15000
 });
 
 async function sendMail(to, subject, html) {

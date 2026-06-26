@@ -113,6 +113,33 @@ export default function EditUserModal({ form, saving, onChange, onClose, onSubmi
           </Field>
         </div>
 
+        <div className="mt-5 grid gap-5 sm:grid-cols-3">
+          <Field label="Team ID">
+            <input
+              value={form.teamId || ''}
+              onChange={(event) => onChange({ ...form, teamId: event.target.value })}
+              placeholder="CRM team id"
+              className="form-input"
+            />
+          </Field>
+          <Field label="Manager ID">
+            <input
+              value={form.managerId || ''}
+              onChange={(event) => onChange({ ...form, managerId: event.target.value })}
+              placeholder="Manager user id"
+              className="form-input"
+            />
+          </Field>
+          <Field label="Operation Head ID">
+            <input
+              value={form.operationHeadId || ''}
+              onChange={(event) => onChange({ ...form, operationHeadId: event.target.value })}
+              placeholder="Operation head id"
+              className="form-input"
+            />
+          </Field>
+        </div>
+
         <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
           <button type="button" onClick={onClose} disabled={saving} className="min-h-11 rounded-lg border border-slate-200 px-7 font-black text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">
             Cancel

@@ -29,6 +29,9 @@ export default function UserDetailsModal({ user, onClose, onEdit }) {
     ['Email', user?.email, Mail],
     ['Role', roleLabels[user?.role] || user?.role, ShieldCheck],
     ['Team', user?.team || 'No team assigned', UserRound],
+    ['Team ID', user?.teamId || '-', UserRound],
+    ['Manager ID', user?.managerId || '-', UserRound],
+    ['Operation Head ID', user?.operationHeadId || '-', UserRound],
     ['Enabled', user?.isActive ? 'Yes' : 'No', ShieldCheck],
     ['Account Status', user?.isActive ? 'Active' : 'Inactive', ShieldCheck],
     ['Login Attempts', '0', ShieldCheck],
@@ -53,7 +56,7 @@ export default function UserDetailsModal({ user, onClose, onEdit }) {
               </div>
               <div className="min-w-0">
                 <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-100">User Details</p>
-                <h2 className="mt-1 truncate text-2xl font-black">{user?.name || 'CRM User'}</h2>
+                <h2 className="mt-1 truncate text-2xl font-black">{user?.name || 'CCP User'}</h2>
                 <p className="truncate text-sm font-bold text-white/75">{user?.email}</p>
               </div>
             </div>

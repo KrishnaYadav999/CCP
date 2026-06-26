@@ -10,7 +10,7 @@ export default function DashboardShell({ currentUser, onOpenProfile, onLogout, c
     <main className="min-h-screen bg-[#eef7f5] text-slate-900">
       <div className="flex min-h-screen">
         <aside
-          className={`fixed inset-y-0 left-0 z-40 w-[296px] border-r border-emerald-100 bg-white shadow-xl shadow-emerald-900/5 transition-all duration-300 ease-out lg:sticky lg:top-0 lg:h-screen lg:self-start lg:translate-x-0 ${
+          className={`fixed inset-y-0 left-0 z-40 w-[296px] border-r border-emerald-100 bg-white shadow-xl shadow-emerald-900/5 transition-all duration-300 ease-out lg:translate-x-0 ${
             sidebarCollapsed ? 'lg:w-[84px]' : 'lg:w-[296px]'
           } ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
         >
@@ -32,7 +32,7 @@ export default function DashboardShell({ currentUser, onOpenProfile, onLogout, c
           />
         )}
 
-        <section className="min-w-0 flex-1">
+        <section className={`min-w-0 flex-1 transition-all duration-300 ease-out ${sidebarCollapsed ? 'lg:ml-[84px]' : 'lg:ml-[296px]'}`}>
           <Topbar
             currentUser={currentUser}
             onOpenProfile={onOpenProfile}

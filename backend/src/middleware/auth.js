@@ -6,6 +6,7 @@ async function requireAuth(req, res, next) {
     const header = req.headers.authorization || '';
     const token = header.startsWith('Bearer ') ? header.slice(7) : null;
 
+    
     if (!token) {
       return res.status(401).json({ error: 'Authorization token required' });
     }
@@ -24,6 +25,27 @@ async function requireAuth(req, res, next) {
   }
 }
 
+async function requireOptionalAuth(req, res, next) {
+  try {
+    const header = req.headers.authorization || '';
+    const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+
+    if (!token) return next();
+
+    const payload = jwt.verify(token, process.env.JWT_SECRET || 'secret');
+    const user = await User.findById(payload.sub).select('-otp -otpExpires -password');
+
+    if (!user || !user.isActive) {
+      return res.status(401).json({ error: 'User is not active' });
+    }
+
+    req.user = user;
+    return next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+}
+
 function requireRoles(roles) {
   return (req, res, next) => {
     if (!req.user || !roles.includes(req.user.role)) {
@@ -34,4 +56,4 @@ function requireRoles(roles) {
   };
 }
 
-module.exports = { requireAuth, requireRoles };
+module.exports = { requireAuth, requireOptionalAuth, requireRoles };

@@ -1,6 +1,6 @@
-# CRM Frontend
+# CCP Frontend
 
-Vite + React frontend for CRM. Uses Tailwind CSS and GSAP for UI.
+Vite + React frontend for CCP.
 
 Run:
 
@@ -10,4 +10,5 @@ npm install
 npm run dev
 ```
 
-Backend should run at `http://localhost:5000` (proxy configured).
+Frontend runs at `http://localhost:8080`.
+Backend should run at `http://localhost:8081`.

@@ -6,8 +6,9 @@ const Role = require('../models/Role');
 const { ROLES } = require('../constants/roles');
 
 async function seed() {
-  const uri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/registerd_types';
-  await mongoose.connect(uri, { dbName: process.env.DB_NAME || 'registerd_types' });
+  const dbName = process.env.DB_NAME || 'ccp';
+  const uri = process.env.MONGO_URI || `mongodb://127.0.0.1:27017/${dbName}`;
+  await mongoose.connect(uri, { dbName });
   console.log('Connected to DB for seeding');
 
   for (const r of ROLES) {

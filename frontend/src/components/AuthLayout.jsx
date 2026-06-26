@@ -38,13 +38,13 @@ export default function AuthLayout({ eyebrow, title, subtitle, children }) {
             <div className="mt-10 max-w-2xl">
               <p className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-emerald-700 shadow-sm">
                 <Sparkles className="h-4 w-4 text-amber-500" />
-                ESG Operations CRM
+                Central Creator Portal
               </p>
               <h2 className="mt-6 text-5xl font-black leading-[1.04] text-slate-950 xl:text-6xl">
                 Smarter waste, cleaner work, faster teams.
               </h2>
               <p className="mt-5 max-w-xl text-lg font-semibold leading-8 text-slate-600">
-                Manage users, sales, compliance and daily action queues from one secure command center.
+                Generate leads, client master records, and admin users from one secure command center.
               </p>
             </div>
 

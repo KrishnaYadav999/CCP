@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Building2, CheckCircle2, ChevronDown, ContactRound, MapPin, Upload, UserCheck, X } from 'lucide-react';
+import { ArrowLeft, Building2, CheckCircle2, ChevronDown, ContactRound, Download, Eye, MapPin, Pencil, RefreshCw, Search, TrendingUp, Upload, UserCheck, UserPlus, UsersRound, X } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import DashboardShell from '../components/dashboard/DashboardShell';
 import ProfileModal from '../components/dashboard/ProfileModal';
 import api from '../services/api';
 
 const emptyLead = {
+  sourceLeadId: '',
   communicationMode: '',
   status: '',
   company: '',
@@ -27,13 +28,24 @@ const emptyLead = {
   contactPerson: '',
   designation: '',
   emails: '',
+  emailsSentCount: '',
+  lastEmailSent: '',
   mobileNo1: '',
   mobileNo2: '',
   businessCardUrl: '',
   referredBy: '',
   source: '',
   notes: '',
-  assignedTo: ''
+  assignedTo: '',
+  assignedToText: '',
+  assignedBy: '',
+  importedCreatedBy: '',
+  leadDate: '',
+  nextFollowUpDate: '',
+  nextFollowUpTime: '',
+  followUpRemarks: '',
+  importedCreatedAt: '',
+  importedUpdatedAt: ''
 };
 
 const tabs = [
@@ -114,9 +126,14 @@ export default function LeadGeneration() {
   const [currentUser, setCurrentUser] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [staff, setStaff] = useState([]);
+  const [leads, setLeads] = useState([]);
   const [lead, setLead] = useState(emptyLead);
+  const [editingLeadId, setEditingLeadId] = useState('');
+  const [viewLead, setViewLead] = useState(null);
   const [activeTab, setActiveTab] = useState('basic');
+  const [viewMode, setViewMode] = useState('form');
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [excelFileName, setExcelFileName] = useState('');
   const [excelRows, setExcelRows] = useState([]);
@@ -145,11 +162,14 @@ export default function LeadGeneration() {
   }, [toast]);
 
   async function loadPage() {
+    setLoading(true);
     try {
       const meResponse = await api.get('/auth/me');
       setCurrentUser(meResponse.data.user);
+      const leadsResponse = await api.get('/leads');
+      setLeads(leadsResponse.data.leads || []);
       try {
-        const usersResponse = await api.get('/auth/admin/users');
+        const usersResponse = await api.get('/auth/users');
         setStaff(usersResponse.data.users || []);
       } catch {
         setStaff([meResponse.data.user]);
@@ -157,6 +177,8 @@ export default function LeadGeneration() {
     } catch {
       localStorage.removeItem('token');
       navigate('/', { replace: true });
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -253,38 +275,40 @@ export default function LeadGeneration() {
     setImporting(true);
     setError('');
     setNotice('');
-    let successCount = 0;
-    const failures = [];
+    try {
+      const payload = excelRows.map((row) => {
+        const assignedToText = row.assignedToText || row.assignedTo || '';
+        return {
+          ...row,
+          assignedToText,
+          existingClient: normalizeExistingClient(row.existingClient),
+          assignedTo: resolveUserId(row.assignedTo || assignedToText) || '',
+          workflowStatus: 'draft'
+        };
+      });
+      const response = await api.post('/leads/bulk', { leads: payload });
+      const successCount = response.data.imported || 0;
+      const failures = response.data.failures || [];
 
-    for (let i = 0; i < excelRows.length; i += 1) {
-      const row = excelRows[i];
-      const payload = {
-        ...row,
-        existingClient: normalizeExistingClient(row.existingClient),
-        assignedTo: resolveUserId(row.assignedTo) || ''
-      };
-
-      try {
-        await api.post('/leads', { ...payload, workflowStatus: 'draft' });
-        successCount += 1;
-      } catch (err) {
-        failures.push({
-          row: i + 2,
-          error: err?.response?.data?.error || 'Unable to save lead'
-        });
+      if (successCount) {
+        setNotice(`${successCount} lead${successCount === 1 ? '' : 's'} imported as drafts.`);
+        showToast(`${successCount} lead${successCount === 1 ? '' : 's'} imported.`, 'success');
+        await loadPage();
       }
-    }
-
-    setImporting(false);
-
-    if (successCount) {
-      setNotice(`${successCount} lead${successCount === 1 ? '' : 's'} imported as drafts.`);
-      showToast(`${successCount} lead${successCount === 1 ? '' : 's'} imported.`, 'success');
-    }
-    if (failures.length) {
-      const message = `${failures.length} row${failures.length === 1 ? '' : 's'} failed. First: row ${failures[0].row} (${failures[0].error})`;
+      if (failures.length) {
+        const message = `${failures.length} row${failures.length === 1 ? '' : 's'} failed. First: row ${failures[0].row + 1} (${failures[0].error})`;
+        setError(message);
+        showToast(message, 'error');
+      }
+    } catch (err) {
+      const failures = err?.response?.data?.failures || [];
+      const message = failures.length
+        ? `${failures.length} row${failures.length === 1 ? '' : 's'} failed. First: row ${failures[0].row + 1} (${failures[0].error})`
+        : err?.response?.data?.error || 'Unable to import leads';
       setError(message);
       showToast(message, 'error');
+    } finally {
+      setImporting(false);
     }
   }
 
@@ -293,11 +317,15 @@ export default function LeadGeneration() {
     setError('');
     setNotice('');
     try {
-      await api.post('/leads', { ...lead, workflowStatus });
+      if (editingLeadId) await api.put(`/leads/${editingLeadId}`, { ...lead, workflowStatus });
+      else await api.post('/leads', { ...lead, workflowStatus });
       setNotice(workflowStatus === 'submitted' ? 'Lead submitted successfully.' : 'Lead draft saved successfully.');
       showToast(workflowStatus === 'submitted' ? 'Lead submitted successfully.' : 'Lead draft saved successfully.', 'success');
       if (workflowStatus === 'submitted') setLead(emptyLead);
+      setEditingLeadId('');
       setActiveTab('basic');
+      await loadPage();
+      if (workflowStatus === 'submitted') setViewMode('form');
     } catch (err) {
       setError(err?.response?.data?.error || 'Unable to save lead');
       showToast(err?.response?.data?.error || 'Unable to save lead', 'error');
@@ -311,6 +339,34 @@ export default function LeadGeneration() {
     localStorage.removeItem('user');
     localStorage.removeItem('login_email');
     navigate('/', { replace: true });
+  }
+
+  if (viewMode === 'list') {
+    return (
+      <DashboardShell currentUser={currentUser} onOpenProfile={() => setProfileOpen(true)} onLogout={handleLogout}>
+        <LeadDirectoryView
+          leads={leads}
+          staff={staff}
+          loading={loading}
+          onRefresh={loadPage}
+          onAddNew={() => {
+            setLead(emptyLead);
+            setEditingLeadId('');
+            setActiveTab('basic');
+            setViewMode('form');
+          }}
+          onView={setViewLead}
+          onEdit={(item) => {
+            setLead({ ...emptyLead, ...item, assignedTo: item.assignedTo?._id || item.assignedTo?.id || item.assignedTo || '' });
+            setEditingLeadId(item._id || item.id);
+            setActiveTab('basic');
+            setViewMode('form');
+          }}
+        />
+        {profileOpen && <ProfileModal user={currentUser} saving={false} onClose={() => setProfileOpen(false)} onLogout={handleLogout} onSave={() => {}} onUpdatePassword={() => {}} />}
+        {viewLead && <LeadViewModal lead={viewLead} onClose={() => setViewLead(null)} />}
+      </DashboardShell>
+    );
   }
 
   return (
@@ -335,7 +391,7 @@ export default function LeadGeneration() {
               </button>
               <div>
                 <p className="text-sm font-black uppercase tracking-[0.18em] text-emerald-700">Sales</p>
-                <h1 className="mt-1 text-3xl font-black text-slate-950">Lead Generation</h1>
+                <h1 className="mt-1 text-3xl font-black text-slate-950">Lead Generator</h1>
               </div>
             </div>
             <div className="rounded-2xl border border-emerald-100 bg-white px-4 py-3 shadow-sm">
@@ -348,7 +404,7 @@ export default function LeadGeneration() {
             <div className="min-w-0">
               <p className="text-sm font-black text-slate-950">Excel upload (Lead Import)</p>
               <p className="mt-1 text-xs font-bold text-slate-500">
-                Upload .xlsx with headers like Company, Status, PIBO Category, Services Offered, Address Line 1, State, City, PIN Code.
+                Upload .xlsx with your headers: Company, Status, PIBO Category, Services Offered, Address, City, PIN, State, Contact Person.
               </p>
               {excelFileName && (
                 <p className="mt-2 text-xs font-black text-slate-700">
@@ -416,6 +472,7 @@ export default function LeadGeneration() {
                   <SelectLike required label="Status" value={lead.status} options={options.status} onChange={(value) => updateField('status', value)} />
                 </LeadSection>
                 <LeadSection title="Company Information">
+                  <Field label="Lead ID"><input className="form-input" value={lead.sourceLeadId} onChange={(event) => updateField('sourceLeadId', event.target.value)} /></Field>
                   <Field required label="Company"><input className="form-input" value={lead.company} onChange={(event) => updateField('company', event.target.value)} /></Field>
                   <SelectLike label="Industry Type" value={lead.industryType} options={options.industryType} onChange={(value) => updateField('industryType', value)} />
                   <SelectLike label="EPR Category" value={lead.eprCategory} options={options.eprCategory} onChange={(value) => updateField('eprCategory', value)} />
@@ -449,15 +506,31 @@ export default function LeadGeneration() {
                   <Field label="Mobile No. 1"><input className="form-input" value={lead.mobileNo1} onChange={(event) => updateField('mobileNo1', event.target.value)} /></Field>
                   <Field label="Mobile No. 2"><input className="form-input" value={lead.mobileNo2} onChange={(event) => updateField('mobileNo2', event.target.value)} /></Field>
                   <Field label="Business Card">
-                    <label className="btn-lift inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 font-black text-slate-800 hover:bg-slate-50">
-                      <Upload className="h-4 w-4" /> Upload
-                      <input type="file" accept="image/*,.pdf" onChange={handleBusinessCard} className="sr-only" />
-                    </label>
+                    <div className="grid gap-3">
+                      <input className="form-input" placeholder="Business Card URL" value={lead.businessCardUrl} onChange={(event) => updateField('businessCardUrl', event.target.value)} />
+                      <div className="flex flex-wrap gap-2">
+                        <label className="btn-lift inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 font-black text-slate-800 hover:bg-slate-50">
+                          <Upload className="h-4 w-4" /> Upload
+                          <input type="file" accept="image/*,.pdf" onChange={handleBusinessCard} className="sr-only" />
+                        </label>
+                        {lead.businessCardUrl && (
+                          <button type="button" onClick={() => window.open(lead.businessCardUrl, '_blank', 'noopener,noreferrer')} className="btn-lift inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-5 font-black text-emerald-700 hover:bg-emerald-100">
+                            <Eye className="h-4 w-4" /> View
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </Field>
                 </LeadSection>
                 <LeadSection title="Additional Information" columns="lg:grid-cols-2">
                   <SelectLike label="Referred By" value={lead.referredBy} options={staffOptions.map((item) => item.label)} onChange={(value) => updateField('referredBy', value)} />
                   <SelectLike label="Source" value={lead.source} options={options.source} onChange={(value) => updateField('source', value)} />
+                  <Field label="Emails Sent Count"><input className="form-input" value={lead.emailsSentCount} onChange={(event) => updateField('emailsSentCount', event.target.value)} /></Field>
+                  <Field label="Last Email Sent"><input className="form-input" value={lead.lastEmailSent} onChange={(event) => updateField('lastEmailSent', event.target.value)} /></Field>
+                  <Field label="Lead Date"><input className="form-input" value={lead.leadDate} onChange={(event) => updateField('leadDate', event.target.value)} /></Field>
+                  <Field label="Next Follow-Up Date"><input className="form-input" value={lead.nextFollowUpDate} onChange={(event) => updateField('nextFollowUpDate', event.target.value)} /></Field>
+                  <Field label="Next Follow-Up Time"><input className="form-input" value={lead.nextFollowUpTime} onChange={(event) => updateField('nextFollowUpTime', event.target.value)} /></Field>
+                  <Field label="Follow-Up Remarks"><input className="form-input" value={lead.followUpRemarks} onChange={(event) => updateField('followUpRemarks', event.target.value)} /></Field>
                   <Field label="Notes" className="lg:col-span-2"><textarea className="form-input min-h-[120px] resize-y py-3" value={lead.notes} onChange={(event) => updateField('notes', event.target.value)} /></Field>
                 </LeadSection>
               </div>
@@ -466,11 +539,16 @@ export default function LeadGeneration() {
             {activeTab === 'assign' && (
               <LeadSection title="Assign Lead" columns="grid-cols-1">
                 <SelectLike label="Assign To Staff" value={lead.assignedTo} options={staffOptions} onChange={(value) => updateField('assignedTo', value)} />
+                <Field label="Assigned To Text"><input className="form-input" value={lead.assignedToText} onChange={(event) => updateField('assignedToText', event.target.value)} /></Field>
+                <Field label="Assigned By"><input className="form-input" value={lead.assignedBy} onChange={(event) => updateField('assignedBy', event.target.value)} /></Field>
+                <Field label="Created By"><input className="form-input" value={lead.importedCreatedBy} onChange={(event) => updateField('importedCreatedBy', event.target.value)} /></Field>
+                <Field label="Created At"><input className="form-input" value={lead.importedCreatedAt} onChange={(event) => updateField('importedCreatedAt', event.target.value)} /></Field>
+                <Field label="Updated At"><input className="form-input" value={lead.importedUpdatedAt} onChange={(event) => updateField('importedUpdatedAt', event.target.value)} /></Field>
               </LeadSection>
             )}
 
             <div className="mt-8 flex flex-col gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:justify-end">
-              <button type="button" onClick={() => navigate('/dashboard')} className="btn-lift min-h-11 rounded-xl border border-slate-200 px-8 font-black text-slate-700">Cancel</button>
+              <button type="button" onClick={() => { setLead(emptyLead); setEditingLeadId(''); setActiveTab('basic'); }} className="btn-lift min-h-11 rounded-xl border border-slate-200 px-8 font-black text-slate-700">Cancel</button>
               <button type="button" disabled={saving} onClick={() => saveLead('draft')} className="btn-lift min-h-11 rounded-xl border border-orange-200 px-8 font-black text-orange-600 hover:bg-orange-50">Save Draft</button>
               {activeTab === 'assign' ? (
                 <button type="button" disabled={saving} onClick={() => saveLead('submitted')} className="btn-lift min-h-11 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 px-8 font-black text-white shadow-lg shadow-orange-600/20">Submit</button>
@@ -492,6 +570,207 @@ function LeadSection({ title, children, columns = 'sm:grid-cols-2 xl:grid-cols-3
       <h2 className="text-2xl font-black text-slate-950">{title}</h2>
       <div className={`mt-5 grid gap-5 ${columns}`}>{children}</div>
     </section>
+  );
+}
+
+function LeadDirectoryView({ leads, staff, loading, onRefresh, onAddNew, onView, onEdit }) {
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [staffFilter, setStaffFilter] = useState('');
+  const [metricFilter, setMetricFilter] = useState('');
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [page, setPage] = useState(1);
+
+  const filteredLeads = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    return leads.slice().sort(compareLeadCode).filter((item) => {
+      const assignedId = item.assignedTo?._id || item.assignedTo?.id || item.assignedTo || '';
+      const isExisting = item.existingClient === 'Yes' || item.status === 'Existing Client';
+      const isNew = item.existingClient !== 'Yes' && item.status !== 'Existing Client';
+      const haystack = [
+        item.leadCode,
+        item.company,
+        item.addressLine1,
+        item.city,
+        item.pinCode,
+        item.piboCategory,
+        item.eprCategory,
+        item.state,
+        item.contactPerson,
+        item.mobileNo1,
+        item.emails,
+        item.status
+      ].filter(Boolean).join(' ').toLowerCase();
+      const matchesSearch = !term || haystack.includes(term);
+      const matchesStatus = !statusFilter || item.status === statusFilter;
+      const matchesStaff = !staffFilter || String(assignedId) === String(staffFilter);
+      const matchesMetric =
+        !metricFilter ||
+        metricFilter === 'all' ||
+        (metricFilter === 'converted' && item.status === 'Existing Client') ||
+        (metricFilter === 'existing' && isExisting) ||
+        (metricFilter === 'new' && isNew);
+      return matchesSearch && matchesStatus && matchesStaff && matchesMetric;
+    });
+  }, [leads, metricFilter, query, staffFilter, statusFilter]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [metricFilter, query, rowsPerPage, staffFilter, statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredLeads.length / rowsPerPage));
+  const visibleLeads = filteredLeads.slice((page - 1) * rowsPerPage, page * rowsPerPage);
+  const existingClients = leads.filter((item) => item.existingClient === 'Yes' || item.status === 'Existing Client').length;
+  const newLeads = leads.filter((item) => item.existingClient !== 'Yes' && item.status !== 'Existing Client').length;
+  const converted = leads.filter((item) => item.status === 'Existing Client').length;
+  const metricStats = [
+    { label: 'Total Leads', value: leads.length, note: 'Complete lead universe', icon: UsersRound, tone: 'emerald', filter: 'all' },
+    { label: 'Converted to Sales', value: converted, note: 'Sales-ready conversions', icon: TrendingUp, tone: 'sky', filter: 'converted' },
+    { label: 'Existing Clients', value: existingClients, note: 'Existing or converted clients', icon: CheckCircle2, tone: 'teal', filter: 'existing' },
+    { label: 'New Leads', value: newLeads, note: 'Fresh non-client records', icon: UserPlus, tone: 'violet', filter: 'new' }
+  ];
+  const selectedMetric = metricStats.find((stat) => stat.filter === metricFilter);
+
+  function exportExcel() {
+    const rows = filteredLeads.map((item) => ({
+      'Lead ID': item.leadCode || '',
+      'Excel Lead ID': item.sourceLeadId || '',
+      Company: item.company || '',
+      Industry: item.industryType || '',
+      Status: item.status || '',
+      'PIBO Category': item.piboCategory || '',
+      'EPR Category': item.eprCategory || '',
+      'Services Offered': item.servicesOffered || '',
+      Address: item.addressLine1 || '',
+      City: item.city || '',
+      PIN: item.pinCode || '',
+      State: item.state || '',
+      'Contact Person': item.contactPerson || '',
+      Designation: item.designation || '',
+      'Mobile 1': item.mobileNo1 || '',
+      'Mobile 2': item.mobileNo2 || '',
+      Email: item.emails || '',
+      Website: item.website || '',
+      'Emails Sent Count': item.emailsSentCount || '',
+      'Last Email Sent': item.lastEmailSent || '',
+      'Referred By': item.referredBy || '',
+      Source: item.source || '',
+      Notes: item.notes || '',
+      'Assigned To': item.assignedTo?.name || item.assignedToText || '',
+      'Assigned By': item.assignedBy || '',
+      'Created By': item.importedCreatedBy || '',
+      'Lead Date': item.leadDate || '',
+      'Next Follow-Up Date': item.nextFollowUpDate || '',
+      'Next Follow-Up Time': item.nextFollowUpTime || '',
+      'Follow-Up Remarks': item.followUpRemarks || '',
+      'Created At': item.importedCreatedAt || item.createdAt || '',
+      'Updated At': item.importedUpdatedAt || item.updatedAt || '',
+      'Business Card URL': item.businessCardUrl || ''
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Leads');
+    XLSX.writeFile(workbook, 'leads.xlsx');
+  }
+
+  return (
+    <div className="px-4 py-6 sm:px-6 lg:px-8">
+      <div className="space-y-7">
+        <LeadStoryStats
+          activeFilter={metricFilter}
+          onFilterChange={(filter) => setMetricFilter((current) => (current === filter ? '' : filter))}
+          stats={metricStats} 
+        />
+
+        {selectedMetric && (
+          <MetricOutputCard
+            stat={selectedMetric}
+            leads={filteredLeads}
+            onClose={() => setMetricFilter('')}
+            onExport={exportExcel}
+          />
+        )}
+
+        <div className="grid gap-3 rounded-2xl border border-slate-100 bg-white/70 p-3 shadow-sm xl:grid-cols-[minmax(220px,1.1fr)_minmax(190px,0.9fr)_minmax(190px,0.9fr)_auto] xl:items-center">
+          <div className="relative min-w-0">
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search" className="h-12 w-full rounded-lg border border-slate-200 bg-white px-5 pr-12 text-base font-black text-slate-900 outline-none placeholder:text-slate-400 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100" />
+            <Search className="pointer-events-none absolute right-6 top-1/2 h-6 w-6 -translate-y-1/2 text-slate-400" />
+          </div>
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="form-input min-h-12 rounded-lg xl:max-w-none">
+            <option value="">All Status</option>
+            {options.status.map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+          <select value={staffFilter} onChange={(event) => setStaffFilter(event.target.value)} className="form-input min-h-12 rounded-lg xl:max-w-none">
+            <option value="">All Staff</option>
+            {staff.map((user) => <option key={user._id || user.id} value={user._id || user.id}>{user.name || user.email}</option>)}
+          </select>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:flex xl:justify-end">
+            <button type="button" onClick={onAddNew} className="btn-lift inline-flex h-12 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-orange-600 px-4 text-sm font-black text-white shadow-lg shadow-orange-600/20"><UserPlus className="h-4 w-4" />Generate Lead</button>
+            <button type="button" onClick={() => { setQuery(''); setStatusFilter(''); setStaffFilter(''); setMetricFilter(''); setPage(1); }} className="btn-lift inline-flex h-12 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-4 text-sm font-black text-slate-600 hover:bg-slate-50"><X className="h-4 w-4" />Clear</button>
+            <button type="button" onClick={onRefresh} className="btn-lift inline-flex h-12 items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-orange-200 bg-white px-4 text-sm font-black text-orange-600 hover:bg-orange-50"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />Refresh</button>
+            <button type="button" onClick={exportExcel} className="btn-lift inline-flex h-12 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-emerald-600 px-4 text-sm font-black text-white shadow-lg shadow-emerald-600/20"><Download className="h-4 w-4" />Export</button>
+          </div>
+        </div>
+
+        <DirectoryTableHeader showing={visibleLeads.length} total={filteredLeads.length} label="leads" rowsPerPage={rowsPerPage} setRowsPerPage={setRowsPerPage} page={page} setPage={setPage} totalPages={totalPages} />
+        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="hidden-scrollbar max-h-[520px] overflow-auto">
+            <table className="crm-data-table w-full min-w-[1680px] table-fixed text-left text-sm">
+              <thead className="sticky top-0 z-10 bg-slate-50 text-xs font-black uppercase tracking-[0.06em] text-slate-500 shadow-sm">
+                <tr>
+                  {[
+                    ['Lead ID', 'w-[110px]'],
+                    ['Company', 'w-[170px]'],
+                    ['Address', 'w-[250px]'],
+                    ['City', 'w-[130px]'],
+                    ['PIN', 'w-[95px]'],
+                    ['State', 'w-[130px]'],
+                    ['PIBO Category', 'w-[150px]'],
+                    ['EPR Category', 'w-[170px]'],
+                    ['Contact Person', 'w-[170px]'],
+                    ['Mobile 1', 'w-[130px]'],
+                    ['Email', 'w-[210px]'],
+                    ['Status', 'w-[140px]'],
+                    ['Action', 'w-[110px]']
+                  ].map(([header, width]) => <th key={header} className={`px-5 py-4 ${width}`}>{header}</th>)}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {visibleLeads.length === 0 ? (
+                  <tr><td colSpan={13} className="px-5 py-12 text-center font-black text-slate-400">No leads found.</td></tr>
+                ) : visibleLeads.map((item) => (
+                  <tr key={item._id || item.id} className="transition hover:bg-orange-50/60">
+                    <td className="px-5 py-4 font-black text-slate-900"><span className="cell-clip">{item.leadCode || '-'}</span></td>
+                    <td className="px-5 py-4 font-black uppercase text-slate-600"><span className="cell-clamp">{item.company || '-'}</span></td>
+                    <td className="px-5 py-4 font-black uppercase text-slate-500"><span className="cell-clamp">{item.addressLine1 || '-'}</span></td>
+                    <td className="px-5 py-4 font-black uppercase text-slate-500"><span className="cell-clip">{item.city || '-'}</span></td>
+                    <td className="px-5 py-4 font-black text-slate-500"><span className="cell-clip">{item.pinCode || '-'}</span></td>
+                    <td className="px-5 py-4 font-black uppercase text-slate-500"><span className="cell-clip">{item.state || '-'}</span></td>
+                    <td className="px-5 py-4 font-black uppercase text-slate-500"><span className="cell-clamp">{item.piboCategory || '-'}</span></td>
+                    <td className="px-5 py-4 font-black uppercase text-slate-500"><span className="cell-clamp">{item.eprCategory || '-'}</span></td>
+                    <td className="px-5 py-4 font-black uppercase text-slate-500"><span className="cell-clamp">{item.contactPerson || '-'}</span></td>
+                    <td className="px-5 py-4 font-black text-slate-500"><span className="cell-clip">{item.mobileNo1 || '-'}</span></td>
+                    <td className="px-5 py-4 font-black text-slate-500"><span className="cell-clip normal-case">{item.emails || '-'}</span></td>
+                    <td className="px-5 py-4"><span className="rounded-lg bg-lime-50 px-3 py-1 text-xs font-black text-lime-700 ring-1 ring-lime-200">{item.status || 'Draft'}</span></td>
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={() => onView(item)} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50" title="View"><Eye className="h-4 w-4" /></button>
+                        <button type="button" onClick={() => onEdit(item)} className="grid h-9 w-9 place-items-center rounded-lg border border-orange-200 text-orange-600 hover:bg-orange-50" title="Edit"><Pencil className="h-4 w-4" /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+          <button type="button" disabled={page === 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="btn-lift min-h-11 rounded-lg border border-slate-200 bg-white px-5 font-black text-slate-600 disabled:cursor-not-allowed disabled:opacity-50">Previous</button>
+          <span className="rounded-lg border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-600">Page {page} of {totalPages}</span>
+          <button type="button" disabled={page === totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))} className="btn-lift min-h-11 rounded-lg border border-slate-200 bg-white px-5 font-black text-slate-600 disabled:cursor-not-allowed disabled:opacity-50">Next</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -531,6 +810,242 @@ function SelectLike({ label, required, value, options = [], onChange, disabled =
   );
 }
 
+function useCountUp(value, active, duration = 850) {
+  const [displayValue, setDisplayValue] = useState(active ? value : 0);
+
+  useEffect(() => {
+    if (!active) {
+      setDisplayValue(0);
+      return undefined;
+    }
+
+    const start = performance.now();
+    const from = 0;
+    const to = Number(value) || 0;
+    let frameId;
+
+    function tick(now) {
+      const progress = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setDisplayValue(Math.round(from + (to - from) * eased));
+      if (progress < 1) frameId = requestAnimationFrame(tick);
+    }
+
+    frameId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frameId);
+  }, [active, duration, value]);
+
+  return displayValue;
+}
+
+function LeadStoryStats({ stats, activeFilter, onFilterChange }) {
+  const [visibleCount, setVisibleCount] = useState(1);
+
+  useEffect(() => {
+    setVisibleCount(1);
+    const timers = stats.slice(1).map((_, index) =>
+      window.setTimeout(() => setVisibleCount(index + 2), 900 * (index + 1))
+    );
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [stats.length]);
+
+  return (
+    <section className="lead-story-panel">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.22em] text-emerald-700">Lead Performance Flow</p>
+          <h2 className="mt-2 text-3xl font-black text-slate-950">Live lead movement</h2>
+        </div>
+        <p className="max-w-xl text-sm font-bold text-slate-500">
+          Each number opens in sequence so the dashboard feels alive while still staying clear and scan-friendly.
+        </p>
+      </div>
+
+      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4 xl:gap-6">
+        {stats.map((stat, index) => (
+          <LeadStoryCard
+            key={stat.label}
+            stat={stat}
+            index={index}
+            active={index < visibleCount}
+            selected={Boolean(stat.filter && activeFilter === stat.filter)}
+            onSelect={stat.filter ? () => onFilterChange(stat.filter) : undefined}
+            showArrow={index < stats.length - 1}
+            arrowActive={index < visibleCount - 1}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function LeadStoryCard({ stat, index, active, selected, onSelect, showArrow, arrowActive }) {
+  const Icon = stat.icon;
+  const value = useCountUp(stat.value, active);
+  const Component = onSelect ? 'button' : 'article';
+
+  return (
+    <Component type={onSelect ? 'button' : undefined} onClick={onSelect} className={`lead-story-card lead-story-${stat.tone} ${active ? 'lead-story-card-active' : ''} ${selected ? 'lead-story-card-selected' : ''}`} style={{ '--delay': `${index * 110}ms` }}>
+      {showArrow && <span className={`lead-story-arrow ${arrowActive ? 'lead-story-arrow-active' : ''}`} />}
+      <div className="lead-story-topline" />
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-xs font-black uppercase tracking-[0.14em] text-slate-500">{stat.label}</p>
+          <p className="mt-2 text-3xl font-black text-slate-950">{value}</p>
+        </div>
+        <span className="lead-story-icon">
+          <Icon className="h-5 w-5" />
+        </span>
+      </div>
+      <p className="mt-3 text-[11px] font-black uppercase leading-4 text-slate-500">{stat.note}</p>
+    </Component>
+  );
+}
+
+function MetricOutputCard({ stat, leads, onClose, onExport }) {
+  const Icon = stat.icon;
+  const preview = leads.slice(0, 10);
+
+  return (
+    <section className={`metric-output-card lead-story-${stat.tone}`}>
+      <div className="flex flex-col gap-4 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="lead-story-icon">
+            <Icon className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Selected Output</p>
+            <h3 className="truncate text-xl font-black text-slate-950">{stat.label}</h3>
+          </div>
+          <span className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-black text-slate-700">{leads.length} records</span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={onExport} className="btn-lift inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-black text-white shadow-lg shadow-emerald-600/20">
+            <Download className="h-4 w-4" /> Export
+          </button>
+          <button type="button" onClick={onClose} className="btn-lift inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-black text-slate-600 hover:bg-slate-50">
+            <X className="h-4 w-4" /> Close
+          </button>
+        </div>
+      </div>
+
+      <div className="hidden-scrollbar max-h-[320px] overflow-auto">
+        <table className="crm-data-table w-full min-w-[980px] table-fixed text-left text-sm">
+          <thead className="sticky top-0 z-10 bg-slate-50 text-xs font-black uppercase tracking-[0.06em] text-slate-500">
+            <tr>
+              {['Lead ID', 'Company', 'City', 'State', 'Contact', 'Mobile', 'Status'].map((header) => (
+                <th key={header} className="px-4 py-3">{header}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {preview.length === 0 ? (
+              <tr><td colSpan={7} className="px-4 py-8 text-center font-black text-slate-400">No records found.</td></tr>
+            ) : preview.map((item) => (
+              <tr key={item._id || item.id} className="transition hover:bg-orange-50/60">
+                <td className="px-4 py-3 font-black text-slate-900"><span className="cell-clip">{item.leadCode || '-'}</span></td>
+                <td className="px-4 py-3 font-black uppercase text-slate-600"><span className="cell-clamp">{item.company || '-'}</span></td>
+                <td className="px-4 py-3 font-black uppercase text-slate-500"><span className="cell-clip">{item.city || '-'}</span></td>
+                <td className="px-4 py-3 font-black uppercase text-slate-500"><span className="cell-clip">{item.state || '-'}</span></td>
+                <td className="px-4 py-3 font-black uppercase text-slate-500"><span className="cell-clip">{item.contactPerson || '-'}</span></td>
+                <td className="px-4 py-3 font-black text-slate-500"><span className="cell-clip">{item.mobileNo1 || '-'}</span></td>
+                <td className="px-4 py-3"><span className="rounded-lg bg-lime-50 px-3 py-1 text-xs font-black text-lime-700 ring-1 ring-lime-200">{item.status || 'Draft'}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {leads.length > preview.length && (
+        <p className="border-t border-slate-100 px-4 py-3 text-sm font-bold text-slate-500">
+          Showing first {preview.length} records here. Export includes all {leads.length} filtered records.
+        </p>
+      )}
+    </section>
+  );
+}
+
+function LeadViewModal({ lead, onClose }) {
+  const rows = [
+    ['Lead ID', lead.leadCode],
+    ['Company', lead.company],
+    ['Status', lead.status],
+    ['Address', lead.addressLine1],
+    ['City', lead.city],
+    ['State', lead.state],
+    ['PIN', lead.pinCode],
+    ['Contact', lead.contactPerson],
+    ['Mobile', lead.mobileNo1],
+    ['Email', lead.emails],
+    ['PIBO', lead.piboCategory],
+    ['EPR', lead.eprCategory]
+  ];
+
+  return (
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-slate-950/50 px-4 py-6">
+      <section className="w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-100 p-5">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-700">Lead View</p>
+            <h2 className="text-2xl font-black text-slate-950">{lead.company || 'Lead details'}</h2>
+          </div>
+          <button type="button" onClick={onClose} className="grid h-10 w-10 place-items-center rounded-lg text-slate-500 hover:bg-slate-100" title="Close"><X className="h-5 w-5" /></button>
+        </div>
+        <div className="grid gap-3 p-5 sm:grid-cols-2">
+          {rows.map(([label, value]) => (
+            <div key={label} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+              <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
+              <p className="mt-1 break-words font-black text-slate-800">{value || '-'}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function DirectoryMetric({ label, value, note }) {
+  return (
+    <div className="min-h-32 rounded-lg border border-slate-200 bg-white p-5 shadow-sm shadow-slate-900/5">
+      <p className="text-sm font-black text-slate-500">{label}</p>
+      <p className="mt-2 text-3xl font-black text-slate-950">{value}</p>
+      {note && <p className="mt-5 text-xs font-black uppercase text-slate-500">{note}</p>}
+    </div>
+  );
+}
+
+function DirectoryTableHeader({ showing, total, label, rowsPerPage, setRowsPerPage, page, setPage, totalPages }) {
+  const start = total ? (page - 1) * rowsPerPage + 1 : 0;
+  const end = total ? start + showing - 1 : 0;
+  const [draftPage, setDraftPage] = useState(String(page));
+
+  useEffect(() => {
+    setDraftPage(String(page));
+  }, [page]);
+
+  function jumpToPage(event) {
+    event.preventDefault();
+    const nextPage = Math.min(totalPages, Math.max(1, Number.parseInt(draftPage, 10) || 1));
+    setPage(nextPage);
+  }
+
+  return (
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <p className="font-black text-slate-600">Showing {showing} of {total} {label} <span className="ml-2">(Page {page} of {totalPages})</span></p>
+      <div className="flex flex-wrap items-center gap-3 font-black text-slate-600">
+        <span>{start} - {end} of {total}</span>
+        <form onSubmit={jumpToPage} className="inline-flex items-center gap-2">
+          <span>Go to:</span>
+          <input value={draftPage} onChange={(event) => setDraftPage(event.target.value)} className="h-11 w-20 rounded-lg border border-slate-200 bg-white px-3 text-center font-black outline-none focus:border-emerald-400" inputMode="numeric" />
+        </form>
+        <span>Rows per page:</span>
+        <select value={rowsPerPage} onChange={(event) => setRowsPerPage(Number(event.target.value))} className="h-11 rounded-lg border border-slate-200 bg-white px-3 font-black outline-none">
+          {[5, 10, 25, 50, 100].map((count) => <option key={count} value={count}>{count}</option>)}
+        </select>
+      </div>
+    </div>
+  );
+}
+
 function normalizeHeaderKey(value) {
   return String(value || '')
     .toLowerCase()
@@ -545,15 +1060,40 @@ function normalizeExistingClient(value) {
   return 'No';
 }
 
+function compareLeadCode(a, b) {
+  const left = Number.parseInt(String(a.leadCode || '').replace(/\D/g, ''), 10) || 0;
+  const right = Number.parseInt(String(b.leadCode || '').replace(/\D/g, ''), 10) || 0;
+  if (left !== right) return left - right;
+  return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
+}
+
+function formatExcelValue(value, field) {
+  if (value === null || value === undefined) return '';
+  if (value instanceof Date) {
+    const iso = value.toISOString();
+    return field === 'nextFollowUpTime' ? iso.slice(11, 16) : iso.slice(0, 10);
+  }
+  if (typeof value === 'number' && ['lastEmailSent', 'leadDate', 'nextFollowUpDate', 'importedCreatedAt', 'importedUpdatedAt'].includes(field)) {
+    return XLSX.SSF.format('yyyy-mm-dd', value);
+  }
+  if (typeof value === 'number' && field === 'nextFollowUpTime') {
+    return XLSX.SSF.format('hh:mm', value);
+  }
+  return typeof value === 'string' ? value.trim() : value;
+}
+
 function mapExcelRowToLead(row, staff) {
   const mapping = {
     communicationmode: 'communicationMode',
+    leadid: 'sourceLeadId',
     status: 'status',
     company: 'company',
+    industry: 'industryType',
     industrytype: 'industryType',
     eprcategory: 'eprCategory',
     pibocategory: 'piboCategory',
     servicesoffered: 'servicesOffered',
+    address: 'addressLine1',
     addressline1: 'addressLine1',
     address1: 'addressLine1',
     addressline2: 'addressLine2',
@@ -572,6 +1112,8 @@ function mapExcelRowToLead(row, staff) {
     designation: 'designation',
     emails: 'emails',
     email: 'emails',
+    emailssentcount: 'emailsSentCount',
+    lastemailsent: 'lastEmailSent',
     mobileno1: 'mobileNo1',
     mobile1: 'mobileNo1',
     phone1: 'mobileNo1',
@@ -582,8 +1124,17 @@ function mapExcelRowToLead(row, staff) {
     referredby: 'referredBy',
     source: 'source',
     notes: 'notes',
-    assignedto: 'assignedTo',
-    assignto: 'assignedTo'
+    assignedto: 'assignedToText',
+    assignto: 'assignedToText',
+    assignedtotext: 'assignedToText',
+    assignedby: 'assignedBy',
+    createdby: 'importedCreatedBy',
+    leaddate: 'leadDate',
+    nextfollowupdate: 'nextFollowUpDate',
+    nextfollowuptime: 'nextFollowUpTime',
+    followupremarks: 'followUpRemarks',
+    createdat: 'importedCreatedAt',
+    updatedat: 'importedUpdatedAt'
   };
 
   const data = {};
@@ -592,17 +1143,18 @@ function mapExcelRowToLead(row, staff) {
     const normalized = normalizeHeaderKey(key);
     const field = mapping[normalized];
     if (!field) return;
-    const clean = typeof value === 'string' ? value.trim() : value;
+    const clean = formatExcelValue(value, field);
     if (field === 'pinCode') data.pinCode = String(clean || '').trim();
+    else if (field === 'emailsSentCount') data.emailsSentCount = Number(clean) || 0;
     else if (field === 'existingClient') data.existingClient = normalizeExistingClient(clean);
     else data[field] = clean === null || clean === undefined ? '' : clean;
   });
 
-  if (data.assignedTo && Array.isArray(staff) && staff.length) {
-    const raw = String(data.assignedTo).trim().toLowerCase();
+  if (data.assignedToText && Array.isArray(staff) && staff.length) {
+    const raw = String(data.assignedToText).trim().toLowerCase();
     const match = staff.find((user) => String(user.email || '').toLowerCase() === raw) ||
       staff.find((user) => String(user.name || '').toLowerCase() === raw);
-    data.assignedTo = match ? (match._id || match.id) : String(data.assignedTo).trim();
+    if (match) data.assignedTo = match._id || match.id;
   }
 
   return data;

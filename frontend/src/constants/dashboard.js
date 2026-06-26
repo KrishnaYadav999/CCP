@@ -1,14 +1,5 @@
 import {
-  Bell,
-  BriefcaseBusiness,
-  CalendarDays,
   ClipboardList,
-  Clock3,
-  FileStack,
-  FileText,
-  Gauge,
-  Headphones,
-  Home,
   UserRound,
   Users
 } from 'lucide-react'
@@ -30,43 +21,23 @@ export const defaultUserForm = {
   firstName: '',
   lastName: '',
   email: '',
+  password: '',
   avatarUrl: '',
   role: 'operation',
   team: 'No team assigned',
+  teamId: '',
+  managerId: '',
+  operationHeadId: '',
   isActive: true
 }
 
 export const navSections = [
   {
-    label: 'Operations',
+    label: 'CCP',
     items: [
-      {
-        label: 'Home',
-        icon: Home,
-        children: [
-          { label: 'Dashboard', icon: Gauge, path: '/dashboard' },
-          { label: 'Pending Action', icon: Clock3 },
-          { label: 'Notifications', icon: Bell },
-          { label: 'Calendar', icon: CalendarDays },
-          { label: 'User Management', icon: Users, path: '/dashboard' }
-        ]
-      }
-    ]
-  },
-  {
-    label: 'Sales',
-    items: [
-      {
-        label: 'Sales',
-        icon: BriefcaseBusiness,
-        children: [
-          { label: 'Lead Generation', icon: ClipboardList, path: '/sales/lead-generation' },
-          { label: 'Client Master', icon: UserRound, path: '/sales/client-master' },
-          { label: 'Quotations', icon: FileText }
-        ]
-      },
-      { label: 'Client Data Processing', icon: FileStack },
-      { label: 'Client Connect', icon: Headphones }
+      { label: 'Lead Generator', icon: ClipboardList, path: '/sales/lead-generation' },
+      { label: 'Client Master Generator', icon: UserRound, path: '/sales/client-master' },
+      { label: 'Admin User Master', icon: Users, path: '/dashboard' }
     ]
   }
 ]

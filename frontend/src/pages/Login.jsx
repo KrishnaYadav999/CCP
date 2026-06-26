@@ -16,8 +16,13 @@ export default function Login(){
     setLoading(true)
     setError('')
     try{
-      await api.post('/auth/request-otp', { email, password })
+      const res = await api.post('/auth/request-otp', { email, password })
       localStorage.setItem('login_email', email)
+      if (import.meta.env.DEV && res.data?.devOtp) {
+        localStorage.setItem('dev_otp', res.data.devOtp)
+      } else {
+        localStorage.removeItem('dev_otp')
+      }
       navigate('/verify', { state: { email, password } })
     }catch(err){
       console.error(err)
@@ -28,7 +33,7 @@ export default function Login(){
   return (
     <AuthLayout
       eyebrow="Admin approved login"
-      title="Sign in to e-Connect"
+      title="Sign in to CCP"
       subtitle="Enter your registered work email and password. We will send a secure one-time code for this session."
     >
       <form onSubmit={handleSubmit} className="mt-8 space-y-5">
