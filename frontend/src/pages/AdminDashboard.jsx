@@ -19,7 +19,7 @@ import Topbar from '../components/dashboard/Topbar'
 import UserActionsMenu from '../components/dashboard/UserActionsMenu'
 import UserDetailsModal from '../components/dashboard/UserDetailsModal'
 import { adminRoles, defaultUserForm, roleLabels } from '../constants/dashboard'
-import api from '../services/api'
+import api, { getApiErrorMessage } from '../services/api'
 
 function formatDateTime(value) {
   if (!value) return 'No login yet'
@@ -120,7 +120,7 @@ export default function AdminDashboard() {
         setUsers([user])
       }
     } catch (err) {
-      setError(err?.response?.data?.error || 'Unable to load dashboard')
+      setError(getApiErrorMessage(err, 'Unable to load dashboard'))
     } finally {
       setLoading(false)
     }
@@ -154,7 +154,7 @@ export default function AdminDashboard() {
         ? `New user added in CCP, but CRM sync failed: ${response.data.crmSync.error}`
         : 'New user added successfully. They can login with OTP from the sign-in page.')
     } catch (err) {
-      setError(err?.response?.data?.error || 'Unable to create user')
+      setError(getApiErrorMessage(err, 'Unable to create user'))
     } finally {
       setSaving(false)
     }
@@ -193,7 +193,7 @@ export default function AdminDashboard() {
         ? `User updated in CCP, but CRM sync failed: ${response.data.crmSync.error}`
         : 'User updated successfully.')
     } catch (err) {
-      setError(err?.response?.data?.error || 'Unable to update user')
+      setError(getApiErrorMessage(err, 'Unable to update user'))
     } finally {
       setSaving(false)
     }
@@ -213,7 +213,7 @@ export default function AdminDashboard() {
       )
       setNotice('Profile updated successfully.')
     } catch (err) {
-      setError(err?.response?.data?.error || 'Unable to update profile')
+      setError(getApiErrorMessage(err, 'Unable to update profile'))
     } finally {
       setSaving(false)
     }
@@ -228,7 +228,7 @@ export default function AdminDashboard() {
       await api.put('/auth/me/password', passwords)
       setNotice('Password updated successfully.')
     } catch (err) {
-      const message = err?.response?.data?.error || 'Unable to update password'
+      const message = getApiErrorMessage(err, 'Unable to update password')
       setError(message)
       throw new Error(message)
     } finally {

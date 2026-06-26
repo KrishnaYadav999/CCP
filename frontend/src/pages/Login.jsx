@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRight, KeyRound, Mail } from 'lucide-react'
 import AuthLayout from '../components/AuthLayout'
-import api from '../services/api'
+import api, { getApiErrorMessage } from '../services/api'
 
 export default function Login(){
   const [email, setEmail] = useState('')
@@ -26,7 +26,7 @@ export default function Login(){
       navigate('/verify', { state: { email, password } })
     }catch(err){
       console.error(err)
-      setError(err?.response?.data?.error || 'Unable to send OTP')
+      setError(getApiErrorMessage(err, 'Unable to send OTP'))
     }finally{ setLoading(false) }
   }
 

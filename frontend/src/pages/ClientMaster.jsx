@@ -6,7 +6,7 @@ import DashboardShell from '../components/dashboard/DashboardShell';
 import ProfileModal from '../components/dashboard/ProfileModal';
 import { brand } from '../constants/brand';
 import { adminRoles } from '../constants/dashboard';
-import api from '../services/api';
+import api, { getApiErrorMessage } from '../services/api';
 
 const tabs = [
   { id: 'basic', label: 'Client Basic Info', icon: Building2 },
@@ -410,7 +410,7 @@ export default function ClientMaster() {
       const failures = err?.response?.data?.failures || [];
       setError(failures.length
         ? `${failures.length} row${failures.length === 1 ? '' : 's'} failed. First: row ${failures[0].row + 1} (${failures[0].error})`
-        : err?.response?.data?.error || 'Unable to import clients');
+        : getApiErrorMessage(err, 'Unable to import clients'));
     } finally {
       setImporting(false);
     }
@@ -457,7 +457,7 @@ export default function ClientMaster() {
         setViewMode('form');
       }
     } catch (err) {
-      setError(err?.response?.data?.error || 'Unable to save client');
+      setError(getApiErrorMessage(err, 'Unable to save client'));
     } finally {
       setSaving(false);
     }

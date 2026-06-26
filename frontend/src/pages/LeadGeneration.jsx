@@ -4,7 +4,7 @@ import { ArrowLeft, Building2, CheckCircle2, ChevronDown, ContactRound, Download
 import * as XLSX from 'xlsx';
 import DashboardShell from '../components/dashboard/DashboardShell';
 import ProfileModal from '../components/dashboard/ProfileModal';
-import api from '../services/api';
+import api, { getApiErrorMessage } from '../services/api';
 
 const emptyLead = {
   sourceLeadId: '',
@@ -304,7 +304,7 @@ export default function LeadGeneration() {
       const failures = err?.response?.data?.failures || [];
       const message = failures.length
         ? `${failures.length} row${failures.length === 1 ? '' : 's'} failed. First: row ${failures[0].row + 1} (${failures[0].error})`
-        : err?.response?.data?.error || 'Unable to import leads';
+        : getApiErrorMessage(err, 'Unable to import leads');
       setError(message);
       showToast(message, 'error');
     } finally {
@@ -327,8 +327,9 @@ export default function LeadGeneration() {
       await loadPage();
       if (workflowStatus === 'submitted') setViewMode('form');
     } catch (err) {
-      setError(err?.response?.data?.error || 'Unable to save lead');
-      showToast(err?.response?.data?.error || 'Unable to save lead', 'error');
+      const message = getApiErrorMessage(err, 'Unable to save lead');
+      setError(message);
+      showToast(message, 'error');
     } finally {
       setSaving(false);
     }

@@ -19,4 +19,17 @@ api.interceptors.request.use((config) => {
   return config
 })
 
+export function getApiErrorMessage(error, fallback = 'Something went wrong') {
+  const data = error?.response?.data
+  const candidate = data?.error || data?.message || error?.message
+
+  if (typeof candidate === 'string') return candidate
+  if (candidate && typeof candidate === 'object') {
+    if (typeof candidate.message === 'string') return candidate.message
+    if (typeof candidate.code === 'string') return candidate.code
+  }
+
+  return fallback
+}
+
 export default api

@@ -33,6 +33,29 @@ CRM Frontend allowed origin: `http://localhost:5173`
 CRM Backend stays on: `http://localhost:5000`  
 Database: `ccp`
 
+## Vercel Deploy
+
+This project is split into two Vercel apps:
+
+- Frontend: `https://ccp-henna.vercel.app`
+- Backend API: `https://ccp-9drj.vercel.app/api`
+
+Frontend production API calls are configured in `frontend/vercel.json` to rewrite `/api/*` to the backend app. In Vercel Environment Variables, also set:
+
+```env
+VITE_API_URL=https://ccp-9drj.vercel.app/api
+```
+
+On the backend Vercel app, set:
+
+```env
+CLIENT_ORIGIN=https://ccp-henna.vercel.app
+MONGO_PROVIDER=atlas
+MONGO_ATLAS_URI=your-mongodb-atlas-uri
+DB_NAME=ccp
+JWT_SECRET=your-long-random-secret
+```
+
 ## MongoDB Config
 
 The backend supports both local MongoDB and MongoDB Atlas.
