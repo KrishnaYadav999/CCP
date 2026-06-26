@@ -8,6 +8,7 @@ const { updateClientPendingApproval } = require('../utils/pendingApproval');
 const { sanitizeClientPayloadForCrm, syncPendingApprovalToCrm } = require('../utils/crmPendingApprovalSync');
 const { requireOptionalAuth } = require('../middleware/auth');
 const { buildLeadVisibilityQuery, buildClientVisibilityQuery } = require('../utils/visibilityScope');
+const asyncHandler = require('../utils/asyncHandler');
 
 const router = express.Router();
 
@@ -114,7 +115,7 @@ router.get('/health', (req, res) => {
   res.json({ ok: true, app: 'CCP', database: process.env.DB_NAME || 'ccp' });
 });
 
-router.get('/leads', async (req, res) => {
+router.get('/leads', asyncHandler(async (req, res) => {
   const query = req.user ? await buildLeadVisibilityQuery(req.user) : {};
   const leads = await Lead.find(query)
     .populate('assignedTo', 'name email crmUserId avatarUrl role team teamId managerId operationHeadId')
@@ -122,9 +123,9 @@ router.get('/leads', async (req, res) => {
     .lean();
 
   res.json({ ok: true, source: 'ccp', leads: leads.map(normalizeLeadForCrm) });
-});
+}));
 
-router.get('/clients', async (req, res) => {
+router.get('/clients', asyncHandler(async (req, res) => {
   await backfillApprovalStatus();
   const query = req.user ? await buildClientVisibilityQuery(req.user) : {};
   const clients = await Client.find(query)
@@ -134,9 +135,9 @@ router.get('/clients', async (req, res) => {
     .lean();
 
   res.json({ ok: true, source: 'ccp', clients: clients.map(normalizeClientForCrm) });
-});
+}));
 
-router.get('/pending-approvals', async (req, res) => {
+router.get('/pending-approvals', asyncHandler(async (req, res) => {
   const status = req.query.status
     ? normalizeApprovalStatus(req.query.status)
     : undefined;
@@ -148,9 +149,9 @@ router.get('/pending-approvals', async (req, res) => {
     .lean();
 
   res.json({ ok: true, source: 'ccp', approvals: approvals.map(normalizePendingApprovalForCrm) });
-});
+}));
 
-router.patch('/clients/:id/approval', async (req, res) => {
+router.patch('/clients/:id/approval', asyncHandler(async (req, res) => {
   const status = normalizeApprovalStatus(req.body.status);
   if (!['APPROVED', 'REJECTED'].includes(status)) {
     return res.status(400).json({ error: 'Approval status must be APPROVED or REJECTED' });
@@ -200,6 +201,6 @@ router.patch('/clients/:id/approval', async (req, res) => {
   await client.populate('adminControls.assignedTo', 'name email crmUserId role avatarUrl');
 
   res.json({ ok: true, client: normalizeClientOutput(client), crmSync });
-});
+}));
 
 module.exports = router;

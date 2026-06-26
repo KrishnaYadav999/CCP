@@ -1,0 +1,80 @@
+name: Vercel Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy-backend:
+    name: Deploy Backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_BACKEND_PROJECT_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Skip when Vercel backend secrets are missing
+        if: ${{ env.VERCEL_TOKEN == '' || env.VERCEL_ORG_ID == '' || env.VERCEL_PROJECT_ID == '' }}
+        run: echo "Skipping backend deploy. Add VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_BACKEND_PROJECT_ID secrets."
+
+      - name: Pull Vercel environment
+        if: ${{ env.VERCEL_TOKEN != '' && env.VERCEL_ORG_ID != '' && env.VERCEL_PROJECT_ID != '' }}
+        run: npx vercel@latest pull --yes --environment=production --token=$VERCEL_TOKEN
+
+      - name: Build
+        if: ${{ env.VERCEL_TOKEN != '' && env.VERCEL_ORG_ID != '' && env.VERCEL_PROJECT_ID != '' }}
+        run: npx vercel@latest build --prod --token=$VERCEL_TOKEN
+
+      - name: Deploy
+        if: ${{ env.VERCEL_TOKEN != '' && env.VERCEL_ORG_ID != '' && env.VERCEL_PROJECT_ID != '' }}
+        run: npx vercel@latest deploy --prebuilt --prod --token=$VERCEL_TOKEN
+
+  deploy-frontend:
+    name: Deploy Frontend
+    runs-on: ubuntu-latest
+    needs: deploy-backend
+    if: ${{ always() }}
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_FRONTEND_PROJECT_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Skip when Vercel frontend secrets are missing
+        if: ${{ env.VERCEL_TOKEN == '' || env.VERCEL_ORG_ID == '' || env.VERCEL_PROJECT_ID == '' }}
+        run: echo "Skipping frontend deploy. Add VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_FRONTEND_PROJECT_ID secrets."
+
+      - name: Pull Vercel environment
+        if: ${{ env.VERCEL_TOKEN != '' && env.VERCEL_ORG_ID != '' && env.VERCEL_PROJECT_ID != '' }}
+        run: npx vercel@latest pull --yes --environment=production --token=$VERCEL_TOKEN
+
+      - name: Build
+        if: ${{ env.VERCEL_TOKEN != '' && env.VERCEL_ORG_ID != '' && env.VERCEL_PROJECT_ID != '' }}
+        run: npx vercel@latest build --prod --token=$VERCEL_TOKEN
+
+      - name: Deploy
+        if: ${{ env.VERCEL_TOKEN != '' && env.VERCEL_ORG_ID != '' && env.VERCEL_PROJECT_ID != '' }}
+        run: npx vercel@latest deploy --prebuilt --prod --token=$VERCEL_TOKEN

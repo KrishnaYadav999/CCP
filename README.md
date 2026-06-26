@@ -56,6 +56,15 @@ DB_NAME=ccp
 JWT_SECRET=your-long-random-secret
 ```
 
+GitHub Actions are included for CI and Vercel deployment. Add these repository secrets before using the deploy workflow:
+
+```env
+VERCEL_TOKEN=your-vercel-token
+VERCEL_ORG_ID=your-vercel-team-or-user-id
+VERCEL_BACKEND_PROJECT_ID=your-backend-vercel-project-id
+VERCEL_FRONTEND_PROJECT_ID=your-frontend-vercel-project-id
+```
+
 ## MongoDB Config
 
 The backend supports both local MongoDB and MongoDB Atlas.
@@ -68,6 +77,24 @@ DB_NAME=ccp
 ```
 
 Use `MONGO_PROVIDER=atlas` when you want Atlas. Use `MONGO_PROVIDER=local` when you want local MongoDB. `MONGO_URI` is optional and overrides both when set.
+
+## Move Local Compass Data To Atlas
+
+Keep `backend/.env` configured with both local and Atlas URIs:
+
+```env
+MONGO_LOCAL_URI=mongodb://127.0.0.1:27017/ccp
+MONGO_ATLAS_URI=mongodb+srv://username:password@cluster0.example.mongodb.net/?appName=Cluster0
+DB_NAME=ccp
+```
+
+Then run:
+
+```bash
+npm run migrate:atlas
+```
+
+The migration copies every local collection to Atlas and skips records that already exist with the same `_id`. To replace Atlas data before copying, set `MIGRATION_DROP_ATLAS=true` only when you intentionally want to clear the Atlas collections first.
 
 ## CCP Data For CRM Projects
 

@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "seed-admin": "node src/seed/adminSeed.js"
+    "seed-admin": "node src/seed/adminSeed.js",
+    "migrate:atlas": "node scripts/migrateMongoToAtlas.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
