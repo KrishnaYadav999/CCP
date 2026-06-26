@@ -33,6 +33,14 @@ CRM Frontend allowed origin: `http://localhost:5173`
 CRM Backend stays on: `http://localhost:5000`  
 Database: `ccp`
 
+For local frontend development, keep `frontend/.env` as:
+
+```env
+VITE_API_URL=/api
+```
+
+Vite proxies `/api` to `http://localhost:8081`, so both local browser navigation and API requests stay on `localhost:8080`.
+
 ## Vercel Deploy
 
 This project is split into two Vercel apps:
