@@ -17,9 +17,11 @@ const connectDB = async () => {
       throw new Error('MongoDB URI is missing. Set MONGO_URI or configure MONGO_PROVIDER with MONGO_LOCAL_URI/MONGO_ATLAS_URI.');
     }
 
+    const serverSelectionTimeoutMS = Number(process.env.MONGO_SERVER_SELECTION_TIMEOUT_MS) || 5000;
+
     connectionPromise = mongoose.connect(uri, {
       dbName,
-      serverSelectionTimeoutMS: 10000
+      serverSelectionTimeoutMS
     });
     await connectionPromise;
     console.log(`MongoDB connected: ${dbName} (${provider})`);

@@ -15,7 +15,9 @@ app.use(express.json({ limit: '3mb' }));
 const defaultAllowedOrigins = [
   'http://localhost:8080',
   'http://localhost:5173',
-  'https://ccp-henna.vercel.app'
+  'https://ccp-henna.vercel.app',
+  'https://crm-1-eight.vercel.app',
+  'https://crm-1-n88d.vercel.app'
 ];
 const allowedOrigins = [
   ...defaultAllowedOrigins,
@@ -34,7 +36,7 @@ function isAllowedVercelOrigin(origin) {
   }
 }
 
-app.use(cors({
+const corsOptions = {
   origin(origin, callback) {
     if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin) || isAllowedVercelOrigin(origin)) {
       return callback(null, true);
@@ -43,11 +45,22 @@ app.use(cors({
     const error = new Error(`CORS blocked for origin: ${origin}`);
     error.statusCode = 403;
     return callback(error);
-  }
-}));
-app.options('*', cors());
+  },
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-ccp-api-key', 'x-action-by'],
+  optionsSuccessStatus: 204
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+
+function isPublicCcpReadRequest(req) {
+  return req.method === 'GET' && ['/api/ccp/leads', '/api/ccp/clients'].includes(req.path);
+}
 
 app.use(async (req, res, next) => {
+  if (isPublicCcpReadRequest(req)) return next();
+
   try {
     await connectDB();
     next();

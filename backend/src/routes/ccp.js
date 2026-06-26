@@ -1,5 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
+const connectDB = require('../config/db');
 const Lead = require('../models/Lead');
 const Client = require('../models/Client');
 const PendingApproval = require('../models/PendingApproval');
@@ -11,6 +12,10 @@ const { buildLeadVisibilityQuery, buildClientVisibilityQuery } = require('../uti
 const asyncHandler = require('../utils/asyncHandler');
 
 const router = express.Router();
+
+function isPublicReadEndpoint(req) {
+  return req.method === 'GET' && ['/leads', '/clients'].includes(req.path);
+}
 
 function requireSharedKey(req, res, next) {
   const expectedKey = process.env.CCP_SHARED_API_KEY;
@@ -24,7 +29,30 @@ function requireSharedKey(req, res, next) {
   return next();
 }
 
-router.use(requireSharedKey, requireOptionalAuth);
+router.use((req, res, next) => {
+  if (isPublicReadEndpoint(req)) return next();
+  return requireSharedKey(req, res, next);
+});
+
+router.use((req, res, next) => {
+  if (isPublicReadEndpoint(req)) return next();
+  return requireOptionalAuth(req, res, next);
+});
+
+async function runPublicRead(res, key, loadRecords, normalizeRecord) {
+  try {
+    await connectDB();
+    const records = await loadRecords();
+    return res.json({
+      ok: true,
+      source: 'ccp',
+      [key]: Array.isArray(records) ? records.map(normalizeRecord) : []
+    });
+  } catch (err) {
+    console.error(`Public CCP ${key} read failed`, err);
+    return res.json({ ok: true, source: 'ccp', [key]: [] });
+  }
+}
 
 function toPlain(doc) {
   return typeof doc?.toObject === 'function' ? doc.toObject() : { ...(doc || {}) };
@@ -115,27 +143,29 @@ router.get('/health', (req, res) => {
   res.json({ ok: true, app: 'CCP', database: process.env.DB_NAME || 'ccp' });
 });
 
-router.get('/leads', asyncHandler(async (req, res) => {
-  const query = req.user ? await buildLeadVisibilityQuery(req.user) : {};
-  const leads = await Lead.find(query)
+router.get('/leads', (req, res) => runPublicRead(
+  res,
+  'leads',
+  () => Lead.find({})
     .populate('assignedTo', 'name email crmUserId avatarUrl role team teamId managerId operationHeadId')
     .sort({ leadCode: 1, createdAt: 1 })
-    .lean();
+    .lean(),
+  normalizeLeadForCrm
+));
 
-  res.json({ ok: true, source: 'ccp', leads: leads.map(normalizeLeadForCrm) });
-}));
-
-router.get('/clients', asyncHandler(async (req, res) => {
-  await backfillApprovalStatus();
-  const query = req.user ? await buildClientVisibilityQuery(req.user) : {};
-  const clients = await Client.find(query)
-    .populate('selectedLead', 'leadCode company status emails mobileNo1 piboCategory eprCategory addressLine1 addressLine2 addressLine3 state city pinCode contactPerson designation')
-    .populate('adminControls.assignedTo', 'name email crmUserId role avatarUrl team teamId managerId operationHeadId')
-    .sort({ createdAt: -1 })
-    .lean();
-
-  res.json({ ok: true, source: 'ccp', clients: clients.map(normalizeClientForCrm) });
-}));
+router.get('/clients', (req, res) => runPublicRead(
+  res,
+  'clients',
+  async () => {
+    await backfillApprovalStatus();
+    return Client.find({})
+      .populate('selectedLead', 'leadCode company status emails mobileNo1 piboCategory eprCategory addressLine1 addressLine2 addressLine3 state city pinCode contactPerson designation')
+      .populate('adminControls.assignedTo', 'name email crmUserId role avatarUrl team teamId managerId operationHeadId')
+      .sort({ createdAt: -1 })
+      .lean();
+  },
+  normalizeClientForCrm
+));
 
 router.get('/pending-approvals', asyncHandler(async (req, res) => {
   const status = req.query.status
