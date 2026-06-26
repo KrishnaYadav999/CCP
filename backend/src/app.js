@@ -12,7 +12,11 @@ const app = express();
 
 app.use(express.json({ limit: '3mb' }));
 
-const defaultAllowedOrigins = ['http://localhost:8080', 'http://localhost:5173'];
+const defaultAllowedOrigins = [
+  'http://localhost:8080',
+  'http://localhost:5173',
+  'https://ccp-henna.vercel.app'
+];
 const allowedOrigins = [
   ...defaultAllowedOrigins,
   ...String(process.env.CLIENT_ORIGIN || '')
@@ -21,15 +25,27 @@ const allowedOrigins = [
     .filter(Boolean)
 ];
 
+function isAllowedVercelOrigin(origin) {
+  try {
+    const { hostname, protocol } = new URL(origin);
+    return protocol === 'https:' && hostname.endsWith('.vercel.app');
+  } catch {
+    return false;
+  }
+}
+
 app.use(cors({
   origin(origin, callback) {
-    if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+    if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin) || isAllowedVercelOrigin(origin)) {
       return callback(null, true);
     }
 
-    return callback(new Error(`CORS blocked for origin: ${origin}`));
+    const error = new Error(`CORS blocked for origin: ${origin}`);
+    error.statusCode = 403;
+    return callback(error);
   }
 }));
+app.options('*', cors());
 
 app.use(async (req, res, next) => {
   try {
