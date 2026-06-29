@@ -61,9 +61,31 @@ async function findPasswordValidatedUser(email, password) {
 
 async function issueOtp(user) {
   const otp = generateOtp();
+  const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+  const otpIssuedAt = new Date();
+  const update = {
+    otp,
+    otpExpires,
+    otpIssuedAt
+  };
+
+  if (user.isModified?.('password')) update.password = user.password;
+
+  const result = await User.updateOne(
+    { _id: user._id },
+    { $set: update },
+    { runValidators: false }
+  );
+
+  if (!result.matchedCount) {
+    const error = new Error('Unable to save OTP. User not found.');
+    error.statusCode = 404;
+    throw error;
+  }
+
   user.otp = otp;
-  user.otpExpires = Date.now() + 10 * 60 * 1000;
-  await user.save();
+  user.otpExpires = otpExpires;
+  user.otpIssuedAt = otpIssuedAt;
 
   const html = `
     <div style="font-family:Arial,sans-serif;line-height:1.5;color:#0f172a">
@@ -164,6 +186,7 @@ exports.verifyOtp = async (req, res) => {
   // clear otp
   user.otp = undefined;
   user.otpExpires = undefined;
+  user.otpIssuedAt = undefined;
   user.lastLogin = new Date();
   await user.save();
 
@@ -335,7 +358,7 @@ exports.updatePassword = async (req, res) => {
 };
 
 exports.listUsers = async (req, res) => {
-  const users = await User.find().select('-otp -otpExpires -password').sort({ createdAt: -1 });
+  const users = await User.find().select('-otp -otpExpires -otpIssuedAt -password').sort({ createdAt: -1 });
   res.json({ ok: true, users });
 };
 

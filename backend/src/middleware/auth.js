@@ -12,7 +12,7 @@ async function requireAuth(req, res, next) {
     }
 
     const payload = jwt.verify(token, process.env.JWT_SECRET || 'secret');
-    const user = await User.findById(payload.sub).select('-otp -otpExpires -password');
+    const user = await User.findById(payload.sub).select('-otp -otpExpires -otpIssuedAt -password');
 
     if (!user || !user.isActive) {
       return res.status(401).json({ error: 'User is not active' });
@@ -33,7 +33,7 @@ async function requireOptionalAuth(req, res, next) {
     if (!token) return next();
 
     const payload = jwt.verify(token, process.env.JWT_SECRET || 'secret');
-    const user = await User.findById(payload.sub).select('-otp -otpExpires -password');
+    const user = await User.findById(payload.sub).select('-otp -otpExpires -otpIssuedAt -password');
 
     if (!user || !user.isActive) {
       return res.status(401).json({ error: 'User is not active' });

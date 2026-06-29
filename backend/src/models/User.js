@@ -17,6 +17,7 @@ const UserSchema = new mongoose.Schema({
   lastLogin: { type: Date },
   otp: { type: String },
   otpExpires: { type: Date },
+  otpIssuedAt: { type: Date },
   isActive: { type: Boolean, default: true },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, { timestamps: true });
