@@ -138,6 +138,7 @@ exports.createUserByAdmin = async (req, res) => {
     source: 'ccp',
     createdBy: req.user?._id
   });
+  user.ccpUserId = String(user._id);
   await user.save();
 
   let crmSync = { ok: true };
@@ -187,6 +188,7 @@ exports.updateUserByAdmin = async (req, res) => {
   user.operationHeadId = operationHeadId;
   user.isActive = isActive;
   if (req.body.avatarUrl !== undefined) user.avatarUrl = avatarUrl;
+  user.ccpUserId = user.ccpUserId || String(user._id);
   user.source = user.source || 'ccp';
   await user.save();
 
@@ -275,7 +277,7 @@ exports.listAssignableUsers = async (req, res) => {
   }
 
   const users = await User.find(query)
-    .select('name email crmUserId source avatarUrl role team teamId managerId operationHeadId isActive createdAt updatedAt')
+    .select('name email crmUserId ccpUserId source avatarUrl role team teamId managerId operationHeadId isActive createdAt updatedAt')
     .sort({ name: 1, email: 1 });
   res.json({ ok: true, users });
 };
@@ -284,6 +286,7 @@ function publicUser(user) {
   return {
     id: user._id,
     crmUserId: user.crmUserId,
+    ccpUserId: user.ccpUserId || String(user._id),
     source: user.source,
     name: user.name,
     email: user.email,

@@ -1,5 +1,48 @@
 const mongoose = require('mongoose');
 
+const ScreenshotReferenceSchema = new mongoose.Schema({
+  name: { type: String, trim: true },
+  type: { type: String, trim: true },
+  size: { type: Number, default: 0 },
+  dataUrl: { type: String },
+  uploadedAt: { type: Date, default: Date.now }
+}, { _id: false });
+
+const ComplianceObservationSchema = new mongoose.Schema({
+  srNo: { type: String, trim: true },
+  area: { type: String, trim: true },
+  observation: { type: String, trim: true },
+  potentialRisk: { type: String, trim: true },
+  screenshotReference: { type: String, trim: true }
+}, { _id: false });
+
+const ComplianceChecklistItemSchema = new mongoose.Schema({
+  srNo: { type: String, trim: true },
+  part: { type: String, trim: true },
+  complianceRequirement: { type: String, trim: true },
+  status: { type: String, trim: true },
+  remark: { type: String, trim: true }
+}, { _id: false });
+
+const ComplianceHealthReportSchema = new mongoose.Schema({
+  yearOfCommencement: { type: String, trim: true },
+  establishmentDate: { type: String, trim: true },
+  organizationType: { type: String, trim: true },
+  keyProductsBrands: { type: String, trim: true },
+  productCategory: { type: String, trim: true },
+  eprRegistrationNumber: { type: String, trim: true },
+  financialYearReviewed: { type: String, trim: true },
+  objectiveReview: { type: String, trim: true },
+  keyObservations: [ComplianceObservationSchema],
+  annualReturnObservations: [ComplianceObservationSchema],
+  checklistReview: [ComplianceChecklistItemSchema],
+  conclusion: { type: String, trim: true },
+  recommendations: { type: String, trim: true },
+  screenshotReferences: [ScreenshotReferenceSchema],
+  reviewedConfirmation: { type: Boolean, default: false },
+  submittedAt: { type: Date }
+}, { _id: false });
+
 const LeadSchema = new mongoose.Schema({
   leadCode: { type: String, trim: true, unique: true, sparse: true },
   sourceLeadId: { type: String, trim: true },
@@ -45,6 +88,7 @@ const LeadSchema = new mongoose.Schema({
   followUpRemarks: { type: String, trim: true },
   importedCreatedAt: { type: String, trim: true },
   importedUpdatedAt: { type: String, trim: true },
+  complianceHealthReport: ComplianceHealthReportSchema,
   workflowStatus: { type: String, enum: ['draft', 'submitted'], default: 'draft' },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, { timestamps: true });

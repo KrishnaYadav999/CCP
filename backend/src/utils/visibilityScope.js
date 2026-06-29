@@ -3,7 +3,7 @@ const { ADMIN_ROLES } = require('../constants/roles');
 const User = require('../models/User');
 
 const FULL_ACCESS_ROLES = [...ADMIN_ROLES];
-const TEAM_ACCESS_ROLES = ['manager', 'operation'];
+const TEAM_ACCESS_ROLES = ['manager'];
 
 function hasFullAccess(user) {
   return Boolean(user && FULL_ACCESS_ROLES.includes(user.role));
@@ -34,6 +34,7 @@ function buildUserIdentityTerms(users) {
     user._id,
     user.email,
     user.crmUserId,
+    user.ccpUserId,
     user.name
   ]));
 
@@ -50,6 +51,7 @@ async function getVisibleUsers(user) {
   if (TEAM_ACCESS_ROLES.includes(user.role)) {
     const managerKeys = [String(ownId), user.email];
     if (user.crmUserId) managerKeys.push(String(user.crmUserId));
+    if (user.ccpUserId) managerKeys.push(String(user.ccpUserId));
 
     const teamIds = uniqueStrings([user.teamId]);
     const subordinateQuery = {
@@ -62,7 +64,7 @@ async function getVisibleUsers(user) {
     };
 
     const subordinates = await User.find(subordinateQuery)
-      .select('_id name email crmUserId role team teamId managerId operationHeadId')
+      .select('_id name email crmUserId ccpUserId role team teamId managerId operationHeadId')
       .lean();
     users.push(...subordinates);
   }
@@ -84,7 +86,7 @@ async function buildLeadVisibilityQuery(user) {
   const identityTerms = buildUserIdentityTerms(visibleUsers);
   const emailValues = uniqueStrings(visibleUsers.map((visibleUser) => visibleUser.email));
   const crmUserIds = uniqueStrings(visibleUsers.map((visibleUser) => visibleUser.crmUserId));
-  const ccpUserIds = uniqueStrings(visibleUsers.map((visibleUser) => visibleUser._id));
+  const ccpUserIds = uniqueStrings(visibleUsers.flatMap((visibleUser) => [visibleUser._id, visibleUser.ccpUserId]));
 
   return { $or: [
     { createdBy: { $in: visibleUserIds } },
@@ -111,7 +113,7 @@ async function buildClientVisibilityQuery(user) {
   const identityTerms = buildUserIdentityTerms(visibleUsers);
   const emailValues = uniqueStrings(visibleUsers.map((visibleUser) => visibleUser.email));
   const crmUserIds = uniqueStrings(visibleUsers.map((visibleUser) => visibleUser.crmUserId));
-  const ccpUserIds = uniqueStrings(visibleUsers.map((visibleUser) => visibleUser._id));
+  const ccpUserIds = uniqueStrings(visibleUsers.flatMap((visibleUser) => [visibleUser._id, visibleUser.ccpUserId]));
 
   return { $or: [
     { createdBy: { $in: visibleUserIds } },

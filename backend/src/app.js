@@ -7,10 +7,11 @@ const leadRoutes = require('./routes/leads');
 const clientRoutes = require('./routes/clients');
 const ccpRoutes = require('./routes/ccp');
 const crmRoutes = require('./routes/crm');
+const teamRoutes = require('./routes/teams');
 
 const app = express();
 
-app.use(express.json({ limit: '3mb' }));
+app.use(express.json({ limit: '25mb' }));
 
 const defaultAllowedOrigins = [
   'http://localhost:8080',
@@ -77,6 +78,7 @@ app.use('/api/leads', leadRoutes);
 app.use('/api/clients', clientRoutes);
 app.use('/api/ccp', ccpRoutes);
 app.use('/api/crm', crmRoutes);
+app.use('/api/teams', teamRoutes);
 
 app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);

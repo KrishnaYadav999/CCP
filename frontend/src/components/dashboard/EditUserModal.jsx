@@ -2,7 +2,14 @@ import React from 'react'
 import { ImagePlus, Trash2, X } from 'lucide-react'
 import { defaultTeams, roles, roleLabels } from '../../constants/dashboard'
 
-export default function EditUserModal({ form, saving, onChange, onClose, onSubmit }) {
+export default function EditUserModal({ form, saving, users = [], teams = [], onChange, onClose, onSubmit }) {
+  const teamOptions = [
+    ...defaultTeams,
+    ...teams.map((team) => team.name).filter(Boolean),
+    form.team
+  ].filter((team, index, values) => team && values.indexOf(team) === index)
+  const activeUsers = users.filter((user) => user.isActive)
+  const managers = activeUsers.filter((user) => user.role === 'manager')
   function handleAvatarChange(event) {
     const file = event.target.files?.[0]
     if (!file) return
@@ -103,12 +110,11 @@ export default function EditUserModal({ form, saving, onChange, onClose, onSubmi
         <div className="mt-5">
           <Field label="Team">
             <select value={form.team} onChange={(event) => onChange({ ...form, team: event.target.value })} className="form-input">
-              {defaultTeams.map((team) => (
+              {teamOptions.map((team) => (
                 <option key={team} value={team}>
                   {team}
                 </option>
               ))}
-              {form.team && !defaultTeams.includes(form.team) && <option value={form.team}>{form.team}</option>}
             </select>
           </Field>
         </div>
@@ -122,21 +128,33 @@ export default function EditUserModal({ form, saving, onChange, onClose, onSubmi
               className="form-input"
             />
           </Field>
-          <Field label="Manager ID">
-            <input
+          <Field label="Manager">
+            <select
               value={form.managerId || ''}
               onChange={(event) => onChange({ ...form, managerId: event.target.value })}
-              placeholder="Manager user id"
               className="form-input"
-            />
+            >
+              <option value="">No manager</option>
+              {managers.map((user) => (
+                <option key={user._id || user.id} value={user._id || user.id}>
+                  {user.name || user.email}
+                </option>
+              ))}
+            </select>
           </Field>
-          <Field label="Operation Head ID">
-            <input
+          <Field label="Operation Head">
+            <select
               value={form.operationHeadId || ''}
               onChange={(event) => onChange({ ...form, operationHeadId: event.target.value })}
-              placeholder="Operation head id"
               className="form-input"
-            />
+            >
+              <option value="">No operation head</option>
+              {activeUsers.map((user) => (
+                <option key={user._id || user.id} value={user._id || user.id}>
+                  {user.name || user.email}
+                </option>
+              ))}
+            </select>
           </Field>
         </div>
 

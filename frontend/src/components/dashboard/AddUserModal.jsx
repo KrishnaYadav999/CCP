@@ -1,26 +1,14 @@
-import React, { useState } from 'react'
+import React from 'react'
 import { ImagePlus, Trash2, X } from 'lucide-react'
 import { defaultTeams, roles, roleLabels } from '../../constants/dashboard'
 
-export default function AddUserModal({ form, saving, error, onChange, onClose, onSubmit }) {
-  const [teams, setTeams] = useState(defaultTeams)
-  const [creatingTeam, setCreatingTeam] = useState(false)
-  const [teamDraft, setTeamDraft] = useState({ name: '', description: '' })
-
-  function saveTeam() {
-    const name = teamDraft.name.trim()
-    if (!name) return
-
-    setTeams((value) => (value.includes(name) ? value : [...value, name]))
-    onChange({ ...form, team: name })
-    setTeamDraft({ name: '', description: '' })
-    setCreatingTeam(false)
-  }
-
-  function cancelTeam() {
-    setTeamDraft({ name: '', description: '' })
-    setCreatingTeam(false)
-  }
+export default function AddUserModal({ form, saving, error, users = [], teams = [], onChange, onClose, onSubmit }) {
+  const teamOptions = [
+    ...defaultTeams,
+    ...teams.map((team) => team.name).filter(Boolean)
+  ].filter((team, index, values) => values.indexOf(team) === index)
+  const activeUsers = users.filter((user) => user.isActive)
+  const managers = activeUsers.filter((user) => user.role === 'manager')
 
   function handleAvatarChange(event) {
     const file = event.target.files?.[0]
@@ -154,48 +142,14 @@ export default function AddUserModal({ form, saving, error, onChange, onClose, o
 
         <div className="mt-5">
           <Field label="Team">
-            <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
-              <select value={form.team} onChange={(event) => onChange({ ...form, team: event.target.value })} className="form-input">
-                {teams.map((team) => (
-                  <option key={team} value={team}>
-                    {team}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={() => setCreatingTeam((value) => !value)}
-                className="min-h-11 rounded-lg border border-emerald-200 px-4 font-black text-emerald-700 transition hover:bg-emerald-50"
-              >
-                {creatingTeam ? 'Cancel' : '+ Create Team'}
-              </button>
-            </div>
+            <select value={form.team} onChange={(event) => onChange({ ...form, team: event.target.value })} className="form-input">
+              {teamOptions.map((team) => (
+                <option key={team} value={team}>
+                  {team}
+                </option>
+              ))}
+            </select>
           </Field>
-
-          {creatingTeam && (
-            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
-              <input
-                value={teamDraft.name}
-                onChange={(event) => setTeamDraft({ ...teamDraft, name: event.target.value })}
-                placeholder="Enter team name"
-                className="form-input"
-              />
-              <textarea
-                value={teamDraft.description}
-                onChange={(event) => setTeamDraft({ ...teamDraft, description: event.target.value })}
-                placeholder="Optional description"
-                className="form-input mt-3 min-h-[64px] resize-y py-3"
-              />
-              <div className="mt-3 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-                <button type="button" onClick={cancelTeam} className="min-h-11 rounded-lg border border-slate-200 bg-white px-7 font-black text-slate-700 transition hover:bg-slate-50">
-                  Cancel
-                </button>
-                <button type="button" onClick={saveTeam} className="min-h-11 rounded-lg bg-emerald-700 px-7 font-black text-white transition hover:bg-emerald-800">
-                  Save Team
-                </button>
-              </div>
-            </div>
-          )}
         </div>
 
         <div className="mt-5 grid gap-5 sm:grid-cols-3">
@@ -207,21 +161,33 @@ export default function AddUserModal({ form, saving, error, onChange, onClose, o
               className="form-input"
             />
           </Field>
-          <Field label="Manager ID">
-            <input
+          <Field label="Manager">
+            <select
               value={form.managerId || ''}
               onChange={(event) => onChange({ ...form, managerId: event.target.value })}
-              placeholder="Manager user id"
               className="form-input"
-            />
+            >
+              <option value="">No manager</option>
+              {managers.map((user) => (
+                <option key={user._id || user.id} value={user._id || user.id}>
+                  {user.name || user.email}
+                </option>
+              ))}
+            </select>
           </Field>
-          <Field label="Operation Head ID">
-            <input
+          <Field label="Operation Head">
+            <select
               value={form.operationHeadId || ''}
               onChange={(event) => onChange({ ...form, operationHeadId: event.target.value })}
-              placeholder="Operation head id"
               className="form-input"
-            />
+            >
+              <option value="">No operation head</option>
+              {activeUsers.map((user) => (
+                <option key={user._id || user.id} value={user._id || user.id}>
+                  {user.name || user.email}
+                </option>
+              ))}
+            </select>
           </Field>
         </div>
 

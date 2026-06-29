@@ -1,10 +1,71 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Building2, CheckCircle2, ChevronDown, ContactRound, Download, Eye, MapPin, Pencil, RefreshCw, Search, TrendingUp, Upload, UserCheck, UserPlus, UsersRound, X } from 'lucide-react';
+import { ArrowLeft, Building2, CheckCircle2, ChevronDown, ContactRound, Download, Eye, MapPin, Pencil, Plus, RefreshCw, Search, TrendingUp, Upload, UserCheck, UserPlus, UsersRound, X } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import DashboardShell from '../components/dashboard/DashboardShell';
 import ProfileModal from '../components/dashboard/ProfileModal';
 import api, { getApiErrorMessage } from '../services/api';
+
+const defaultComplianceObservations = [
+  { srNo: 'Part A', area: 'General Information', observation: '', potentialRisk: '', screenshotReference: '' },
+  { srNo: 'Part B', area: 'Liquid and gaseous emissions', observation: '', potentialRisk: '', screenshotReference: '' },
+  { srNo: 'Part C', area: 'Waste', observation: '', potentialRisk: '', screenshotReference: '' },
+  { srNo: 'Part D', area: 'Waste Action Plan', observation: '', potentialRisk: '', screenshotReference: '' }
+];
+
+const defaultAnnualReturnObservations = [
+  { srNo: '1', area: 'Annual Return', observation: '', potentialRisk: '', screenshotReference: '' }
+];
+
+const defaultChecklistReview = [
+  ['1', 'PART A', 'Legal / Trade Name of Company'],
+  ['2', 'PART A', 'Type of Company'],
+  ['3', 'PART A', 'Type of Business'],
+  ['4', 'PART A', 'CIN'],
+  ['5', 'PART A', 'PAN'],
+  ['6', 'PART A', 'Registered Address'],
+  ['7', 'Authorized Person Details', 'Name'],
+  ['8', 'Authorized Person Details', 'Designation'],
+  ['9', 'Authorized Person Details', 'PAN'],
+  ['10', 'Authorized Person Details', 'Mobile Number'],
+  ['11', 'Authorized Person Details', 'Email ID'],
+  ['12', 'Operational & Production Details', 'States/UTs where PIBO operates'],
+  ['13', 'Operational & Production Details', 'Confirmation of Production Facility'],
+  ['14', 'Operational & Production Details', 'Total Capital Invested in the Project'],
+  ['15', 'Operational & Production Details', 'Year of Commencement of Operations'],
+  ['16', 'Documents Uploaded on Portal', 'Company PAN, CIN & GST'],
+  ['17', 'Documents Uploaded on Portal', 'Authorized Person PAN'],
+  ['18', 'Documents Uploaded on Portal', 'Product details and quantity'],
+  ['19', 'PART B', 'Air / Water Consent'],
+  ['20', 'PART C', 'Raw plastic material details'],
+  ['21', 'PART C', 'Plastic raw material sold details'],
+  ['22', 'PART D', 'Geo-tagged photographs of facility'],
+  ['23', 'PART D', 'Picture of machine'],
+  ['24', 'PART D', 'Electricity bill'],
+  ['25', 'PART D', 'Covering Letter'],
+  ['26', 'PART D', 'Scanned Signature'],
+  ['27', 'PART D', 'Any other supporting information']
+].map(([srNo, part, complianceRequirement]) => ({ srNo, part, complianceRequirement, status: '', remark: '' }));
+
+function createEmptyComplianceReport() {
+  return {
+    yearOfCommencement: '',
+    establishmentDate: '',
+    organizationType: '',
+    keyProductsBrands: '',
+    productCategory: '',
+    eprRegistrationNumber: '',
+    financialYearReviewed: '',
+    objectiveReview: '',
+    keyObservations: defaultComplianceObservations.map((item) => ({ ...item })),
+    annualReturnObservations: defaultAnnualReturnObservations.map((item) => ({ ...item })),
+    checklistReview: defaultChecklistReview.map((item) => ({ ...item })),
+    conclusion: '',
+    recommendations: '',
+    screenshotReferences: [],
+    reviewedConfirmation: false
+  };
+}
 
 const emptyLead = {
   sourceLeadId: '',
@@ -45,7 +106,8 @@ const emptyLead = {
   nextFollowUpTime: '',
   followUpRemarks: '',
   importedCreatedAt: '',
-  importedUpdatedAt: ''
+  importedUpdatedAt: '',
+  complianceHealthReport: createEmptyComplianceReport()
 };
 
 const tabs = [
@@ -140,6 +202,10 @@ export default function LeadGeneration() {
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [toast, setToast] = useState(null);
+  const [submitPromptOpen, setSubmitPromptOpen] = useState(false);
+  const [plainSubmitConfirmed, setPlainSubmitConfirmed] = useState(false);
+  const [reportSubmitPromptOpen, setReportSubmitPromptOpen] = useState(false);
+  const [reportReviewed, setReportReviewed] = useState(false);
   const navigate = useNavigate();
 
   const isFirstStepReady = Boolean(lead.status && lead.company && lead.piboCategory && lead.servicesOffered);
@@ -150,6 +216,14 @@ export default function LeadGeneration() {
     label: `${user.name || user.email} (${user.team || 'Team'})`
   })), [staff]);
   const cityOptions = lead.state ? stateCities[lead.state] || [] : [];
+  const nextLeadCode = useMemo(() => {
+    const latestNumber = leads.reduce((highest, item) => {
+      const code = String(item.leadCode || '').replace('ATPL-LEAD-', '');
+      const number = Number.parseInt(code, 10) || 0;
+      return Math.max(highest, number);
+    }, 0);
+    return `ATPL-LEAD-${String(latestNumber + 1).padStart(4, '0')}`;
+  }, [leads]);
 
   useEffect(() => {
     loadPage();
@@ -190,6 +264,39 @@ export default function LeadGeneration() {
     }));
   }
 
+  function updateReportField(field, value) {
+    setLead((current) => ({
+      ...current,
+      complianceHealthReport: {
+        ...createEmptyComplianceReport(),
+        ...(current.complianceHealthReport || {}),
+        [field]: value
+      }
+    }));
+  }
+
+  function updateReportRow(section, index, field, value) {
+    setLead((current) => {
+      const report = { ...createEmptyComplianceReport(), ...(current.complianceHealthReport || {}) };
+      const rows = (report[section] || []).map((row, rowIndex) => (rowIndex === index ? { ...row, [field]: value } : row));
+      return { ...current, complianceHealthReport: { ...report, [section]: rows } };
+    });
+  }
+
+  function addReportRow(section, row) {
+    setLead((current) => {
+      const report = { ...createEmptyComplianceReport(), ...(current.complianceHealthReport || {}) };
+      return { ...current, complianceHealthReport: { ...report, [section]: [...(report[section] || []), row] } };
+    });
+  }
+
+  function removeReportRow(section, index) {
+    setLead((current) => {
+      const report = { ...createEmptyComplianceReport(), ...(current.complianceHealthReport || {}) };
+      return { ...current, complianceHealthReport: { ...report, [section]: (report[section] || []).filter((_, rowIndex) => rowIndex !== index) } };
+    });
+  }
+
   function showToast(message, type = 'info') {
     setToast({ message, type });
   }
@@ -221,6 +328,50 @@ export default function LeadGeneration() {
     const reader = new FileReader();
     reader.onload = () => updateField('businessCardUrl', reader.result);
     reader.readAsDataURL(file);
+  }
+
+  async function handleScreenshotUpload(event) {
+    const files = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (!files.length) return;
+
+    const uploads = await Promise.all(files.map((file) => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve({
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        dataUrl: reader.result,
+        uploadedAt: new Date().toISOString()
+      });
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    })));
+
+    setLead((current) => {
+      const report = { ...createEmptyComplianceReport(), ...(current.complianceHealthReport || {}) };
+      return {
+        ...current,
+        complianceHealthReport: {
+          ...report,
+          screenshotReferences: [...(report.screenshotReferences || []), ...uploads]
+        }
+      };
+    });
+    showToast(`${uploads.length} screenshot${uploads.length === 1 ? '' : 's'} uploaded.`, 'success');
+  }
+
+  function removeScreenshot(index) {
+    setLead((current) => {
+      const report = { ...createEmptyComplianceReport(), ...(current.complianceHealthReport || {}) };
+      return {
+        ...current,
+        complianceHealthReport: {
+          ...report,
+          screenshotReferences: (report.screenshotReferences || []).filter((_, itemIndex) => itemIndex !== index)
+        }
+      };
+    });
   }
 
   function resolveUserId(value) {
@@ -312,13 +463,18 @@ export default function LeadGeneration() {
     }
   }
 
-  async function saveLead(workflowStatus) {
+  async function saveLead(workflowStatus, reportOverride) {
     setSaving(true);
     setError('');
     setNotice('');
     try {
-      if (editingLeadId) await api.put(`/leads/${editingLeadId}`, { ...lead, workflowStatus });
-      else await api.post('/leads', { ...lead, workflowStatus });
+      const payload = {
+        ...lead,
+        complianceHealthReport: reportOverride || lead.complianceHealthReport,
+        workflowStatus
+      };
+      if (editingLeadId) await api.put(`/leads/${editingLeadId}`, payload);
+      else await api.post('/leads', payload);
       setNotice(workflowStatus === 'submitted' ? 'Lead submitted successfully.' : 'Lead draft saved successfully.');
       showToast(workflowStatus === 'submitted' ? 'Lead submitted successfully.' : 'Lead draft saved successfully.', 'success');
       if (workflowStatus === 'submitted') setLead(emptyLead);
@@ -326,12 +482,49 @@ export default function LeadGeneration() {
       setActiveTab('basic');
       await loadPage();
       if (workflowStatus === 'submitted') setViewMode('form');
+      return true;
     } catch (err) {
       const message = getApiErrorMessage(err, 'Unable to save lead');
       setError(message);
       showToast(message, 'error');
+      return false;
     } finally {
       setSaving(false);
+    }
+  }
+
+  function openSubmitPrompt() {
+    setPlainSubmitConfirmed(false);
+    setSubmitPromptOpen(true);
+  }
+
+  function continueToComplianceReport() {
+    setSubmitPromptOpen(false);
+    setPlainSubmitConfirmed(false);
+    setReportReviewed(false);
+    setViewMode('complianceReport');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  async function submitWithoutComplianceReport() {
+    if (!plainSubmitConfirmed) return;
+    setSubmitPromptOpen(false);
+    await saveLead('submitted');
+  }
+
+  async function submitComplianceReport() {
+    if (!reportReviewed) return;
+    const report = {
+      ...createEmptyComplianceReport(),
+      ...(lead.complianceHealthReport || {}),
+      reviewedConfirmation: true,
+      submittedAt: new Date().toISOString()
+    };
+    const saved = await saveLead('submitted', report);
+    if (saved) {
+      setReportSubmitPromptOpen(false);
+      setReportReviewed(false);
+      setViewMode('form');
     }
   }
 
@@ -366,6 +559,51 @@ export default function LeadGeneration() {
         />
         {profileOpen && <ProfileModal user={currentUser} saving={false} onClose={() => setProfileOpen(false)} onLogout={handleLogout} onSave={() => {}} onUpdatePassword={() => {}} />}
         {viewLead && <LeadViewModal lead={viewLead} onClose={() => setViewLead(null)} />}
+      </DashboardShell>
+    );
+  }
+
+  if (viewMode === 'complianceReport') {
+    const report = { ...createEmptyComplianceReport(), ...(lead.complianceHealthReport || {}) };
+    return (
+      <DashboardShell currentUser={currentUser} onOpenProfile={() => setProfileOpen(true)} onLogout={handleLogout}>
+        {toast && (
+          <div className="fixed right-5 top-24 z-[70] w-[min(360px,calc(100vw-40px))] animate-toast-in rounded-2xl border border-white/70 bg-white p-4 shadow-2xl shadow-slate-900/20">
+            <div className="flex items-start gap-3">
+              <span className={`mt-1 h-3 w-3 rounded-full ${toast.type === 'error' ? 'bg-red-500' : toast.type === 'warning' ? 'bg-orange-500' : 'bg-emerald-500'}`} />
+              <p className="min-w-0 flex-1 text-sm font-black text-slate-800">{toast.message}</p>
+              <button type="button" onClick={() => setToast(null)} className="grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
+        <ComplianceHealthReportView
+          lead={lead}
+          report={report}
+          saving={saving}
+          onBack={() => setViewMode('form')}
+          onUpdateField={updateReportField}
+          onUpdateRow={updateReportRow}
+          onAddRow={addReportRow}
+          onRemoveRow={removeReportRow}
+          onScreenshotUpload={handleScreenshotUpload}
+          onRemoveScreenshot={removeScreenshot}
+          onOpenSubmit={() => {
+            setReportReviewed(false);
+            setReportSubmitPromptOpen(true);
+          }}
+        />
+        {reportSubmitPromptOpen && (
+          <ReportSubmitPrompt
+            checked={reportReviewed}
+            saving={saving}
+            onCheckedChange={setReportReviewed}
+            onClose={() => setReportSubmitPromptOpen(false)}
+            onSubmit={submitComplianceReport}
+          />
+        )}
+        {profileOpen && <ProfileModal user={currentUser} saving={false} onClose={() => setProfileOpen(false)} onLogout={handleLogout} onSave={() => {}} onUpdatePassword={() => {}} />}
       </DashboardShell>
     );
   }
@@ -473,7 +711,9 @@ export default function LeadGeneration() {
                   <SelectLike required label="Status" value={lead.status} options={options.status} onChange={(value) => updateField('status', value)} />
                 </LeadSection>
                 <LeadSection title="Company Information">
-                  <Field label="Lead ID"><input className="form-input" value={lead.sourceLeadId} onChange={(event) => updateField('sourceLeadId', event.target.value)} /></Field>
+                  <Field label="Lead ID">
+                    <input className="form-input bg-slate-50 text-slate-500" value={lead.leadCode || nextLeadCode} readOnly />
+                  </Field>
                   <Field required label="Company"><input className="form-input" value={lead.company} onChange={(event) => updateField('company', event.target.value)} /></Field>
                   <SelectLike label="Industry Type" value={lead.industryType} options={options.industryType} onChange={(value) => updateField('industryType', value)} />
                   <SelectLike label="EPR Category" value={lead.eprCategory} options={options.eprCategory} onChange={(value) => updateField('eprCategory', value)} />
@@ -552,7 +792,7 @@ export default function LeadGeneration() {
               <button type="button" onClick={() => { setLead(emptyLead); setEditingLeadId(''); setActiveTab('basic'); }} className="btn-lift min-h-11 rounded-xl border border-slate-200 px-8 font-black text-slate-700">Cancel</button>
               <button type="button" disabled={saving} onClick={() => saveLead('draft')} className="btn-lift min-h-11 rounded-xl border border-orange-200 px-8 font-black text-orange-600 hover:bg-orange-50">Save Draft</button>
               {activeTab === 'assign' ? (
-                <button type="button" disabled={saving} onClick={() => saveLead('submitted')} className="btn-lift min-h-11 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 px-8 font-black text-white shadow-lg shadow-orange-600/20">Submit</button>
+                <button type="button" disabled={saving} onClick={openSubmitPrompt} className="btn-lift min-h-11 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 px-8 font-black text-white shadow-lg shadow-orange-600/20">Submit</button>
               ) : (
                 <button type="button" onClick={nextTab} className="btn-lift min-h-11 rounded-xl bg-gradient-to-r from-emerald-700 to-teal-700 px-8 font-black text-white shadow-lg shadow-emerald-700/20">Next Step</button>
               )}
@@ -560,6 +800,16 @@ export default function LeadGeneration() {
           </section>
         </div>
       </div>
+      {submitPromptOpen && (
+        <LeadSubmitPrompt
+          confirmed={plainSubmitConfirmed}
+          saving={saving}
+          onConfirmChange={setPlainSubmitConfirmed}
+          onClose={() => setSubmitPromptOpen(false)}
+          onYes={continueToComplianceReport}
+          onNoSubmit={submitWithoutComplianceReport}
+        />
+      )}
       {profileOpen && <ProfileModal user={currentUser} saving={false} onClose={() => setProfileOpen(false)} onLogout={handleLogout} onSave={() => {}} onUpdatePassword={() => {}} />}
     </DashboardShell>
   );
@@ -571,6 +821,344 @@ function LeadSection({ title, children, columns = 'sm:grid-cols-2 xl:grid-cols-3
       <h2 className="text-2xl font-black text-slate-950">{title}</h2>
       <div className={`mt-5 grid gap-5 ${columns}`}>{children}</div>
     </section>
+  );
+}
+
+function ComplianceHealthReportView({
+  lead,
+  report,
+  saving,
+  onBack,
+  onUpdateField,
+  onUpdateRow,
+  onAddRow,
+  onRemoveRow,
+  onScreenshotUpload,
+  onRemoveScreenshot,
+  onOpenSubmit
+}) {
+  const inheritedDetails = [
+    ['Company', lead.company],
+    ['Address', [lead.addressLine1, lead.addressLine2, lead.addressLine3, lead.city, lead.state, lead.pinCode].filter(Boolean).join(', ')],
+    ['Contact', [lead.contactPerson, lead.mobileNo1, lead.emails].filter(Boolean).join(' | ')],
+    ['Assign', lead.assignedToText || lead.assignedBy || lead.importedCreatedBy]
+  ];
+
+  return (
+    <div className="px-4 py-6 sm:px-6 lg:px-8">
+      <div className="rounded-[28px] bg-gradient-to-br from-emerald-50 via-white to-cyan-50 p-4 shadow-sm ring-1 ring-emerald-100 sm:p-5 lg:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-5">
+          <div className="flex items-center gap-4">
+            <button type="button" onClick={onBack} className="btn-lift inline-flex h-11 w-11 items-center justify-center rounded-lg border border-emerald-100 bg-white text-emerald-700 shadow-sm" title="Back">
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <div>
+              <p className="text-sm font-black uppercase tracking-[0.18em] text-emerald-700">Compliance</p>
+              <h1 className="mt-1 text-3xl font-black text-slate-950">COMPLIANCE HEALTH REPORT</h1>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-emerald-100 bg-white px-4 py-3 shadow-sm">
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Screenshots</p>
+            <p className="mt-1 font-black text-emerald-700">{report.screenshotReferences?.length || 0} uploaded</p>
+          </div>
+        </div>
+
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Already captured from lead</p>
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {inheritedDetails.map(([label, value]) => (
+              <div key={label} className="rounded-lg border border-emerald-100 bg-emerald-50/60 p-4">
+                <p className="text-xs font-black uppercase tracking-[0.12em] text-emerald-700">{label}</p>
+                <p className="mt-2 min-h-10 break-words font-black text-slate-900">{value || '-'}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <ReportSectionTitle title="1. Company Overview" />
+          <div className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+            <ReportTextField label="Year of Commencement of Operations" value={report.yearOfCommencement} onChange={(value) => onUpdateField('yearOfCommencement', value)} />
+            <ReportTextField label="Year of Establishment" value={report.establishmentDate} onChange={(value) => onUpdateField('establishmentDate', value)} />
+            <ReportTextField label="Type of Organization" value={report.organizationType} onChange={(value) => onUpdateField('organizationType', value)} />
+            <ReportTextField label="Key Products / Brands" value={report.keyProductsBrands} onChange={(value) => onUpdateField('keyProductsBrands', value)} />
+            <ReportTextField label="Product Category" value={report.productCategory} onChange={(value) => onUpdateField('productCategory', value)} />
+            <ReportTextField label="EPR Registration Number" value={report.eprRegistrationNumber} onChange={(value) => onUpdateField('eprRegistrationNumber', value)} />
+            <ReportTextField label="Financial Year Reviewed" value={report.financialYearReviewed} onChange={(value) => onUpdateField('financialYearReviewed', value)} />
+          </div>
+        </section>
+
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <ReportSectionTitle title="2. Objective of Review" />
+          <textarea className="form-input mt-5 min-h-[130px] resize-y py-3" value={report.objectiveReview} onChange={(event) => onUpdateField('objectiveReview', event.target.value)} />
+        </section>
+
+        <ObservationTable
+          title="3.1 Key Compliance Observations"
+          rows={report.keyObservations || []}
+          defaultOpen
+          onUpdate={(index, field, value) => onUpdateRow('keyObservations', index, field, value)}
+          onAdd={() => onAddRow('keyObservations', { srNo: '', area: '', observation: '', potentialRisk: '', screenshotReference: '' })}
+          onRemove={(index) => onRemoveRow('keyObservations', index)}
+        />
+
+        <ObservationTable
+          title="3.2 Key Compliance Observations For Annual Return"
+          rows={report.annualReturnObservations || []}
+          defaultOpen={false}
+          onUpdate={(index, field, value) => onUpdateRow('annualReturnObservations', index, field, value)}
+          onAdd={() => onAddRow('annualReturnObservations', { srNo: '', area: '', observation: '', potentialRisk: '', screenshotReference: '' })}
+          onRemove={(index) => onRemoveRow('annualReturnObservations', index)}
+        />
+
+        <ChecklistReviewTable
+          rows={report.checklistReview || []}
+          defaultOpen={false}
+          onUpdate={(index, field, value) => onUpdateRow('checklistReview', index, field, value)}
+        />
+
+        <ScreenshotReferencePanel files={report.screenshotReferences || []} onUpload={onScreenshotUpload} onRemove={onRemoveScreenshot} />
+
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <ReportSectionTitle title="5. Conclusion & Next Steps" />
+          <div className="mt-5 grid gap-5 lg:grid-cols-2">
+            <Field label="Conclusion"><textarea className="form-input min-h-[150px] resize-y py-3" value={report.conclusion} onChange={(event) => onUpdateField('conclusion', event.target.value)} /></Field>
+            <Field label="Recommendations"><textarea className="form-input min-h-[150px] resize-y py-3" value={report.recommendations} onChange={(event) => onUpdateField('recommendations', event.target.value)} /></Field>
+          </div>
+        </section>
+
+        <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onBack} className="btn-lift min-h-11 rounded-xl border border-slate-200 bg-white px-8 font-black text-slate-700">Back</button>
+          <button type="button" disabled={saving} onClick={onOpenSubmit} className="btn-lift min-h-11 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 px-8 font-black text-white shadow-lg shadow-orange-600/20">
+            Submit Report
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReportSectionTitle({ title }) {
+  return (
+    <div className="rounded-lg bg-yellow-300 px-4 py-2 text-center text-lg font-black text-slate-950">
+      {title}
+    </div>
+  );
+}
+
+function ReportTextField({ label, value, onChange }) {
+  return (
+    <Field label={label}>
+      <input className="form-input" value={value || ''} onChange={(event) => onChange(event.target.value)} />
+    </Field>
+  );
+}
+
+function ObservationTable({ title, rows, onUpdate, onAdd, onRemove, defaultOpen = true }) {
+  return (
+    <details open={defaultOpen} className="group mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 border-b border-slate-100 p-4">
+        <span className="font-black text-slate-950">{title}</span>
+        <span className="rounded-lg bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">{rows.length} rows</span>
+      </summary>
+      <div className="hidden-scrollbar max-h-[520px] overflow-auto">
+        <table className="w-full min-w-[980px] table-fixed border-collapse text-left text-sm">
+          <thead className="bg-slate-50 text-xs font-black uppercase tracking-[0.06em] text-slate-500">
+            <tr>
+              <th className="w-28 border border-slate-200 px-3 py-3">Sr. No.</th>
+              <th className="w-56 border border-slate-200 px-3 py-3">Area</th>
+              <th className="border border-slate-200 px-3 py-3">Observation</th>
+              <th className="border border-slate-200 px-3 py-3">Potential Risk</th>
+              <th className="w-64 border border-slate-200 px-3 py-3">Screenshot Reference</th>
+              <th className="w-20 border border-slate-200 px-3 py-3">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={`${row.srNo}-${index}`}>
+                {['srNo', 'area', 'observation', 'potentialRisk', 'screenshotReference'].map((field) => (
+                  <td key={field} className="border border-slate-200 p-2 align-top">
+                    <textarea className="form-input min-h-[72px] resize-y rounded-lg py-3 text-sm" value={row[field] || ''} onChange={(event) => onUpdate(index, field, event.target.value)} />
+                  </td>
+                ))}
+                <td className="border border-slate-200 p-2 align-top">
+                  <button type="button" onClick={() => onRemove(index)} className="grid h-10 w-10 place-items-center rounded-lg border border-red-200 text-red-600 hover:bg-red-50" title="Remove">
+                    <X className="h-4 w-4" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="border-t border-slate-100 p-4">
+        <button type="button" onClick={onAdd} className="btn-lift inline-flex min-h-10 items-center gap-2 rounded-xl bg-emerald-700 px-4 font-black text-white shadow-lg shadow-emerald-700/20">
+          <Plus className="h-4 w-4" /> Add Row
+        </button>
+      </div>
+    </details>
+  );
+}
+
+function ChecklistReviewTable({ rows, onUpdate, defaultOpen = false }) {
+  return (
+    <details open={defaultOpen} className="group mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 border-b border-slate-100 p-4">
+        <span className="font-black text-slate-950">4. Compliance Checklist Review</span>
+        <span className="rounded-lg bg-amber-50 px-3 py-1 text-xs font-black text-amber-700">{rows.length} checks</span>
+      </summary>
+      <div className="hidden-scrollbar max-h-[560px] overflow-auto">
+        <table className="w-full min-w-[920px] table-fixed border-collapse text-left text-sm">
+          <thead className="bg-slate-50 text-xs font-black uppercase tracking-[0.06em] text-slate-500">
+            <tr>
+              <th className="w-24 border border-slate-200 px-3 py-3">Sr. No.</th>
+              <th className="w-56 border border-slate-200 px-3 py-3">Part</th>
+              <th className="border border-slate-200 px-3 py-3">Compliance Requirement</th>
+              <th className="w-52 border border-slate-200 px-3 py-3">Status</th>
+              <th className="w-64 border border-slate-200 px-3 py-3">Remark</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={`${row.srNo}-${row.complianceRequirement}`}>
+                <td className="border border-slate-200 p-2"><input className="form-input min-h-10 rounded-lg" value={row.srNo || ''} onChange={(event) => onUpdate(index, 'srNo', event.target.value)} /></td>
+                <td className="border border-slate-200 p-2"><input className="form-input min-h-10 rounded-lg" value={row.part || ''} onChange={(event) => onUpdate(index, 'part', event.target.value)} /></td>
+                <td className="border border-slate-200 p-2"><textarea className="form-input min-h-[58px] resize-y rounded-lg py-3" value={row.complianceRequirement || ''} onChange={(event) => onUpdate(index, 'complianceRequirement', event.target.value)} /></td>
+                <td className="border border-slate-200 p-2">
+                  <select className="form-input min-h-10 rounded-lg" value={row.status || ''} onChange={(event) => onUpdate(index, 'status', event.target.value)}>
+                    <option value="">Select</option>
+                    <option>Yes</option>
+                    <option>No</option>
+                    <option>Mentioned</option>
+                    <option>Uploaded</option>
+                    <option>Not Uploaded</option>
+                    <option>Not Mentioned</option>
+                    <option>Not Applicable</option>
+                  </select>
+                </td>
+                <td className="border border-slate-200 p-2"><textarea className="form-input min-h-[58px] resize-y rounded-lg py-3" value={row.remark || ''} onChange={(event) => onUpdate(index, 'remark', event.target.value)} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  );
+}
+
+function ScreenshotReferencePanel({ files, onUpload, onRemove }) {
+  return (
+    <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex flex-col gap-4 border-b border-slate-100 p-5 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-700">Evidence</p>
+          <h2 className="text-2xl font-black text-slate-950">Screenshot Reference</h2>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-black text-slate-600">{files.length} files</span>
+          <label className="btn-lift inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 font-black text-white shadow-lg shadow-emerald-700/20">
+            <Upload className="h-4 w-4" /> Bulk Upload
+            <input type="file" multiple accept="image/*,.pdf" onChange={onUpload} className="sr-only" />
+          </label>
+        </div>
+      </div>
+      <div className="grid gap-4 p-5 xl:grid-cols-[320px_1fr]">
+        <div className="rounded-2xl border-2 border-dashed border-emerald-200 bg-emerald-50/70 p-5">
+          <div>
+            <p className="font-black text-slate-900">Bulk upload screenshots, PDFs, or supporting images</p>
+            <p className="mt-2 text-sm font-bold leading-6 text-slate-500">Select many files at once. Images show previews and all files save with this report.</p>
+          </div>
+          <label className="btn-lift mt-5 inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-5 font-black text-emerald-700 hover:bg-emerald-50">
+            <Upload className="h-4 w-4" /> Choose Files
+            <input type="file" multiple accept="image/*,.pdf" onChange={onUpload} className="sr-only" />
+          </label>
+        </div>
+        <div className="hidden-scrollbar max-h-[360px] overflow-auto rounded-2xl border border-slate-200 bg-slate-50 p-3">
+          <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+            {files.length === 0 ? (
+              <p className="rounded-lg border border-slate-200 bg-white p-4 font-black text-slate-500">No screenshots uploaded yet.</p>
+            ) : files.map((file, index) => (
+              <div key={`${file.name}-${index}`} className="group relative overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                <div className="grid aspect-video place-items-center bg-slate-100">
+                  {String(file.type || '').startsWith('image/') ? (
+                    <img src={file.dataUrl} alt={file.name} className="h-full w-full object-cover" />
+                  ) : (
+                    <Upload className="h-6 w-6 text-slate-500" />
+                  )}
+                </div>
+                <div className="flex items-center gap-2 p-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-black text-slate-900">{file.name}</p>
+                    <p className="text-xs font-bold text-slate-500">{Math.ceil((file.size || 0) / 1024)} KB</p>
+                  </div>
+                  <button type="button" onClick={() => onRemove(index)} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-red-200 text-red-600 hover:bg-red-50" title="Remove">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function LeadSubmitPrompt({ confirmed, saving, onConfirmChange, onClose, onYes, onNoSubmit }) {
+  const [noSelected, setNoSelected] = useState(false);
+
+  return (
+    <ConfirmationShell title="Do you want to process for COMPLIANCE HEALTH REPORT" onClose={onClose}>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <button type="button" onClick={onYes} className="btn-lift min-h-12 rounded-xl bg-emerald-700 px-5 font-black text-white shadow-lg shadow-emerald-700/20">Yes</button>
+        <button type="button" onClick={() => { setNoSelected(true); onConfirmChange(false); }} className="btn-lift min-h-12 rounded-xl border border-slate-200 bg-white px-5 font-black text-slate-700">No</button>
+      </div>
+      {noSelected && (
+        <>
+          <label className="mt-5 flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <input type="checkbox" checked={confirmed} onChange={(event) => onConfirmChange(event.target.checked)} className="mt-1 h-5 w-5 accent-emerald-700" />
+            <span className="font-black text-slate-800">I have checked all the details I filled in, and they are correct.</span>
+          </label>
+          <div className="mt-5 flex justify-end">
+            <button type="button" disabled={!confirmed || saving} onClick={onNoSubmit} className="btn-lift min-h-11 rounded-xl bg-orange-600 px-7 font-black text-white shadow-lg shadow-orange-600/20 disabled:cursor-not-allowed disabled:opacity-50">
+              {saving ? 'Submitting...' : 'Submit'}
+            </button>
+          </div>
+        </>
+      )}
+    </ConfirmationShell>
+  );
+}
+
+function ReportSubmitPrompt({ checked, saving, onCheckedChange, onClose, onSubmit }) {
+  return (
+    <ConfirmationShell title="Submit COMPLIANCE HEALTH REPORT" onClose={onClose}>
+      <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <input type="checkbox" checked={checked} onChange={(event) => onCheckedChange(event.target.checked)} className="mt-1 h-5 w-5 accent-emerald-700" />
+        <span className="font-black text-slate-800">I have reviewed all the details I entered, and they are correct.</span>
+      </label>
+      <div className="mt-5 flex justify-end">
+        <button type="button" disabled={!checked || saving} onClick={onSubmit} className="btn-lift min-h-11 rounded-xl bg-orange-600 px-7 font-black text-white shadow-lg shadow-orange-600/20 disabled:cursor-not-allowed disabled:opacity-50">
+          {saving ? 'Submitting...' : 'Submit'}
+        </button>
+      </div>
+    </ConfirmationShell>
+  );
+}
+
+function ConfirmationShell({ title, children, onClose }) {
+  return (
+    <div className="fixed inset-0 z-[90] grid place-items-center bg-slate-950/50 px-4 py-6">
+      <section className="w-full max-w-xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 p-5">
+          <h2 className="text-2xl font-black text-slate-950">{title}</h2>
+          <button type="button" onClick={onClose} className="grid h-10 w-10 place-items-center rounded-lg text-slate-500 hover:bg-slate-100" title="Close">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="p-5">{children}</div>
+      </section>
+    </div>
   );
 }
 
@@ -785,27 +1373,75 @@ function Field({ label, required, children, className = '' }) {
 }
 
 function SelectLike({ label, required, value, options = [], onChange, disabled = false, placeholder = 'Select or type to create new' }) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef(null);
   const normalized = Array.isArray(options)
     ? options.map((option) => (typeof option === 'string' ? { value: option, label: option } : option))
     : [];
-  const listId = `${label.replace(/\s+/g, '-')}-options`;
+  const filtered = normalized
+    .filter((option) => String(option.label || option.value || '').toLowerCase().includes(String(value || '').toLowerCase()))
+    .slice(0, 80);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   return (
     <Field label={label} required={required}>
-      <div className="relative">
+      <div ref={wrapperRef} className="relative">
         <input
           value={value}
-          list={listId}
           disabled={disabled}
-          onChange={(event) => onChange(event.target.value)}
+          onFocus={() => !disabled && setOpen(true)}
+          onChange={(event) => {
+            onChange(event.target.value);
+            setOpen(true);
+          }}
           placeholder={placeholder}
           className="form-input pr-12 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
         />
-        <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-        <datalist id={listId}>
-          {normalized.map((option) => (
-            <option key={option.value} value={option.value}>{option.label}</option>
-          ))}
-        </datalist>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => setOpen((current) => !current)}
+          className="absolute right-2 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed"
+          title="Open options"
+        >
+          <ChevronDown className={`h-5 w-5 transition ${open ? 'rotate-180' : ''}`} />
+        </button>
+        {open && !disabled && (
+          <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-[85] overflow-hidden rounded-xl border border-emerald-100 bg-white shadow-2xl shadow-slate-900/18">
+            <div className="max-h-72 overflow-auto p-2">
+              {filtered.length === 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  className="w-full rounded-lg px-3 py-3 text-left text-sm font-black text-slate-500 hover:bg-slate-50"
+                >
+                  Use "{value || placeholder}"
+                </button>
+              ) : filtered.map((option) => (
+                <button
+                  type="button"
+                  key={`${option.value}-${option.label}`}
+                  onClick={() => {
+                    onChange(option.value);
+                    setOpen(false);
+                  }}
+                  className={`w-full rounded-lg px-3 py-3 text-left text-sm font-black transition hover:bg-emerald-50 hover:text-emerald-700 ${
+                    String(value) === String(option.value) ? 'bg-emerald-50 text-emerald-700' : 'text-slate-700'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </Field>
   );

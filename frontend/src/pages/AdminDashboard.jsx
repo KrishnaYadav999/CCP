@@ -11,6 +11,7 @@ import {
   Users
 } from 'lucide-react'
 import AddUserModal from '../components/dashboard/AddUserModal'
+import CreateTeamModal from '../components/dashboard/CreateTeamModal'
 import EditUserModal from '../components/dashboard/EditUserModal'
 import KpiSummary from '../components/dashboard/KpiSummary'
 import ProfileModal from '../components/dashboard/ProfileModal'
@@ -52,7 +53,9 @@ function splitName(name = '') {
 export default function AdminDashboard() {
   const [currentUser, setCurrentUser] = useState(null)
   const [users, setUsers] = useState([])
+  const [teams, setTeams] = useState([])
   const [form, setForm] = useState(defaultUserForm)
+  const [teamForm, setTeamForm] = useState({ name: '', description: '', manager: '', operationHead: '', members: [] })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -62,6 +65,7 @@ export default function AdminDashboard() {
   const [rowsPerPage, setRowsPerPage] = useState(5)
   const [page, setPage] = useState(1)
   const [modalOpen, setModalOpen] = useState(false)
+  const [teamModalOpen, setTeamModalOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [activeActionUser, setActiveActionUser] = useState(null)
@@ -113,12 +117,13 @@ export default function AdminDashboard() {
       const user = meResponse.data.user
       setCurrentUser(user)
 
-      if (adminRoles.includes(user.role)) {
-        const usersResponse = await api.get('/auth/admin/users')
-        setUsers(usersResponse.data.users || [])
-      } else {
-        setUsers([user])
-      }
+      const [usersResponse, teamsResponse] = await Promise.all([
+        adminRoles.includes(user.role) ? api.get('/auth/admin/users') : api.get('/auth/users'),
+        api.get('/teams')
+      ])
+
+      setUsers(usersResponse.data.users || [])
+      setTeams(teamsResponse.data.teams || [])
     } catch (err) {
       setError(getApiErrorMessage(err, 'Unable to load dashboard'))
     } finally {
@@ -199,6 +204,27 @@ export default function AdminDashboard() {
     }
   }
 
+  async function handleCreateTeam(event) {
+    event.preventDefault()
+    setSaving(true)
+    setError('')
+    setNotice('')
+
+    try {
+      const response = await api.post('/teams', teamForm)
+      setTeams((prevTeams) => [response.data.team, ...prevTeams])
+      const usersResponse = await api.get('/auth/admin/users')
+      setUsers(usersResponse.data.users || users)
+      setTeamForm({ name: '', description: '', manager: '', operationHead: '', members: [] })
+      setTeamModalOpen(false)
+      setNotice('Team created and user mapping updated successfully.')
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Unable to create team'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function handleUpdateProfile(profile) {
     setSaving(true)
     setError('')
@@ -273,6 +299,12 @@ export default function AdminDashboard() {
     setForm(defaultUserForm)
   }
 
+  function closeTeamModal() {
+    if (saving) return
+    setTeamModalOpen(false)
+    setTeamForm({ name: '', description: '', manager: '', operationHead: '', members: [] })
+  }
+
   if (loading) {
     return (
       <div className="grid min-h-screen place-items-center bg-emerald-50 px-6 text-center">
@@ -339,18 +371,32 @@ export default function AdminDashboard() {
                 </div>
 
                 {canManageUsers && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setError('')
-                      setNotice('')
-                      setModalOpen(true)
-                    }}
-                    className="btn-lift group inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-700 to-teal-700 px-5 py-3 font-black text-white shadow-lg shadow-emerald-700/20 transition"
-                  >
-                    <Plus className="h-5 w-5 transition duration-300 group-hover:rotate-90" />
-                    Create Admin User
-                  </button>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setError('')
+                        setNotice('')
+                        setTeamModalOpen(true)
+                      }}
+                      className="btn-lift group inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-5 py-3 font-black text-emerald-700 shadow-sm transition hover:bg-emerald-50"
+                    >
+                      <Users className="h-5 w-5" />
+                      Create Team
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setError('')
+                        setNotice('')
+                        setModalOpen(true)
+                      }}
+                      className="btn-lift group inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-700 to-teal-700 px-5 py-3 font-black text-white shadow-lg shadow-emerald-700/20 transition"
+                    >
+                      <Plus className="h-5 w-5 transition duration-300 group-hover:rotate-90" />
+                      Create User
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -527,9 +573,22 @@ export default function AdminDashboard() {
           form={form}
           saving={saving}
           error={error}
+          users={users}
+          teams={teams}
           onChange={setForm}
           onClose={closeModal}
           onSubmit={handleCreateUser}
+        />
+      )}
+      {teamModalOpen && (
+        <CreateTeamModal
+          form={teamForm}
+          users={users}
+          saving={saving}
+          error={error}
+          onChange={setTeamForm}
+          onClose={closeTeamModal}
+          onSubmit={handleCreateTeam}
         />
       )}
       {detailsUser && (
@@ -543,6 +602,8 @@ export default function AdminDashboard() {
         <EditUserModal
           form={editForm}
           saving={saving}
+          users={users}
+          teams={teams}
           onChange={setEditForm}
           onClose={() => {
             if (saving) return

@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Bell, Info, LogOut, Menu, Search, Settings, UserRound } from 'lucide-react'
+import { Bell, Info, LogOut, Menu, PlugZap, Settings, UserRound } from 'lucide-react'
 import { roleLabels } from '../../constants/dashboard'
 
 export default function Topbar({ currentUser, onOpenProfile, onOpenSidebar, onLogout }) {
@@ -29,13 +29,16 @@ export default function Topbar({ currentUser, onOpenProfile, onOpenSidebar, onLo
             <Menu className="h-5 w-5" />
           </button>
 
-          <div className="relative hidden w-full max-w-xl md:block">
-            <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-            <input
-              placeholder="Search leads, clients, users..."
-              className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-12 pr-4 font-semibold outline-none transition duration-300 hover:border-emerald-200 focus:border-emerald-500 focus:bg-white focus:shadow-lg focus:shadow-emerald-900/10 focus:ring-4 focus:ring-emerald-100"
-            />
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              window.location.href = 'http://localhost:5173/dashboard'
+            }}
+            className="btn-lift inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 font-black text-white shadow-lg shadow-emerald-700/20 transition hover:bg-emerald-800 sm:px-5"
+          >
+            <PlugZap className="h-5 w-5" />
+            <span className="hidden sm:inline">CRM Connect</span>
+          </button>
         </div>
 
         <div className="flex shrink-0 items-center gap-2 sm:gap-3">

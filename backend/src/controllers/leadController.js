@@ -96,11 +96,18 @@ function cleanBody(body) {
     'followUpRemarks',
     'importedCreatedAt',
     'importedUpdatedAt',
+    'complianceHealthReport',
     'workflowStatus'
   ].forEach((key) => {
     if (body[key] !== undefined) {
       const rawValue = key === 'assignedTo' ? normalizeAssignedUserInput(body[key]).assignedTo : body[key];
       const value = typeof rawValue === 'string' ? rawValue.trim() : rawValue;
+      if (key === 'complianceHealthReport') {
+        data.complianceHealthReport = value && typeof value === 'object'
+          ? { ...value, submittedAt: value.submittedAt || (value.reviewedConfirmation ? new Date() : undefined) }
+          : undefined;
+        return;
+      }
       if (key === 'assignedTo' && body[key] && typeof body[key] === 'object') {
         const assignedInput = normalizeAssignedUserInput(body[key]);
         data.assignedToText = data.assignedToText || String(assignedInput.assignedToText || '').trim();
