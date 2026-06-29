@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Bell, Info, LogOut, Menu, PlugZap, Settings, UserRound } from 'lucide-react'
+import { Bell, Info, LogOut, Menu, PlugZap, UserRound } from 'lucide-react'
 import { roleLabels } from '../../constants/dashboard'
 
 export default function Topbar({ currentUser, onOpenProfile, onOpenSidebar, onLogout }) {
@@ -32,7 +32,7 @@ export default function Topbar({ currentUser, onOpenProfile, onOpenSidebar, onLo
           <button
             type="button"
             onClick={() => {
-              window.location.href = 'http://localhost:5173/dashboard'
+              window.location.href = 'https://ananttattva.com/'
             }}
             className="btn-lift inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 font-black text-white shadow-lg shadow-emerald-700/20 transition hover:bg-emerald-800 sm:px-5"
           >
@@ -44,7 +44,6 @@ export default function Topbar({ currentUser, onOpenProfile, onOpenSidebar, onLo
         <div className="flex shrink-0 items-center gap-2 sm:gap-3">
           <IconButton icon={Info} label="Help" />
           <IconButton icon={Bell} label="Notifications" />
-          <IconButton icon={Settings} label="Settings" />
           <div className="relative">
             <button
               type="button"
