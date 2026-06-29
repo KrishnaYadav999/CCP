@@ -17,6 +17,10 @@ const defaultAnnualReturnObservations = [
   { srNo: '1', area: 'Annual Return', observation: '', potentialRisk: '', screenshotReference: '' }
 ];
 
+const keyProductBrandOptions = [
+  'Uploaded in shared folder'
+];
+
 const defaultChecklistReview = [
   ['1', 'PART A', 'Legal / Trade Name of Company'],
   ['2', 'PART A', 'Type of Company'],
@@ -924,7 +928,7 @@ function ComplianceHealthReportView({
             <ReportTextField label="Year of Commencement of Operations" value={report.yearOfCommencement} onChange={(value) => onUpdateField('yearOfCommencement', value)} />
             <ReportTextField label="Year of Establishment" value={report.establishmentDate} onChange={(value) => onUpdateField('establishmentDate', value)} />
             <ReportTextField label="Type of Organization" value={report.organizationType} onChange={(value) => onUpdateField('organizationType', value)} />
-            <ReportTextField label="Key Products / Brands" value={report.keyProductsBrands} onChange={(value) => onUpdateField('keyProductsBrands', value)} />
+            <ReportMultiSelectField label="Key Products / Brands" value={report.keyProductsBrands} options={keyProductBrandOptions} onChange={(value) => onUpdateField('keyProductsBrands', value)} />
             <ReportTextField label="Product Category" value={report.productCategory} onChange={(value) => onUpdateField('productCategory', value)} />
             <ReportTextField label="EPR Registration Number" value={report.eprRegistrationNumber} onChange={(value) => onUpdateField('eprRegistrationNumber', value)} />
             <ReportTextField label="Financial Year Reviewed" value={report.financialYearReviewed} onChange={(value) => onUpdateField('financialYearReviewed', value)} />
@@ -994,6 +998,78 @@ function ReportTextField({ label, value, onChange }) {
   return (
     <Field label={label}>
       <input className="form-input text-center" value={value || ''} onChange={(event) => onChange(event.target.value)} />
+    </Field>
+  );
+}
+
+function ReportMultiSelectField({ label, value, options = [], onChange }) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef(null);
+  const selected = String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  function commit(nextSelected) {
+    onChange(nextSelected.join(', '));
+  }
+
+  function toggleOption(option) {
+    const exists = selected.includes(option);
+    commit(exists ? selected.filter((item) => item !== option) : [...selected, option]);
+  }
+
+  return (
+    <Field label={label}>
+      <div ref={wrapperRef} className="relative">
+        <button
+          type="button"
+          onClick={() => setOpen((current) => !current)}
+          className="flex min-h-12 w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left font-black text-slate-800 shadow-sm transition focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-100"
+        >
+          <span className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            {selected.length ? selected.map((item) => (
+              <span key={item} className="inline-flex max-w-full items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-sm font-black text-emerald-800">
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+                <span className="truncate">{item}</span>
+              </span>
+            )) : (
+              <span className="text-sm font-black text-slate-400">Select multiple options</span>
+            )}
+          </span>
+          <ChevronDown className={`h-5 w-5 shrink-0 text-slate-400 transition ${open ? 'rotate-180' : ''}`} />
+        </button>
+        {open && (
+          <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-[80] overflow-hidden rounded-xl border border-emerald-100 bg-white p-2 shadow-2xl shadow-slate-900/18">
+            {options.map((option) => {
+              const active = selected.includes(option);
+              return (
+                <button
+                  type="button"
+                  key={option}
+                  onClick={() => toggleOption(option)}
+                  className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-3 text-left text-sm font-black transition ${
+                    active ? 'bg-emerald-50 text-emerald-800' : 'text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <span>{option}</span>
+                  <span className={`grid h-6 w-6 place-items-center rounded-lg border ${active ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-200 text-transparent'}`}>
+                    <CheckCircle2 className="h-4 w-4" />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </Field>
   );
 }
