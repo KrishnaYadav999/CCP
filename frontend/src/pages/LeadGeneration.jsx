@@ -62,6 +62,7 @@ function createEmptyComplianceReport() {
     checklistReview: defaultChecklistReview.map((item) => ({ ...item })),
     conclusion: '',
     recommendations: '',
+    finalNotes: [{ conclusion: '', recommendations: '' }],
     screenshotReferences: [],
     reviewedConfirmation: false
   };
@@ -837,6 +838,20 @@ function ComplianceHealthReportView({
   onRemoveScreenshot,
   onOpenSubmit
 }) {
+  const finalNoteRows = Array.isArray(report.finalNotes) && report.finalNotes.length
+    ? report.finalNotes
+    : [{ conclusion: report.conclusion || '', recommendations: report.recommendations || '' }];
+
+  function updateFinalNote(index, field, value) {
+    const nextRows = finalNoteRows.map((row, rowIndex) => (rowIndex === index ? { ...row, [field]: value } : row));
+    onUpdateField('finalNotes', nextRows);
+    if (index === 0) onUpdateField(field, value);
+  }
+
+  function addFinalNote() {
+    onUpdateField('finalNotes', [...finalNoteRows, { conclusion: '', recommendations: '' }]);
+  }
+
   const reportStats = [
     { label: 'Overview Fields', value: '7' },
     { label: 'Observation Rows', value: String((report.keyObservations || []).length + (report.annualReturnObservations || []).length) },
@@ -925,9 +940,9 @@ function ComplianceHealthReportView({
         />
 
         <ConclusionTermsSection
-          conclusion={report.conclusion}
-          recommendations={report.recommendations}
-          onChange={onUpdateField}
+          rows={finalNoteRows}
+          onUpdate={updateFinalNote}
+          onAdd={addFinalNote}
         />
 
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-end">
@@ -958,12 +973,7 @@ function ReportTextField({ label, value, onChange }) {
   );
 }
 
-function ConclusionTermsSection({ conclusion, recommendations, onChange }) {
-  const rows = [
-    { id: 'conclusion', label: 'Conclusion', value: conclusion || '', placeholder: 'Enter conclusion' },
-    { id: 'recommendations', label: 'Recommendations', value: recommendations || '', placeholder: 'Enter recommendations or next steps' }
-  ];
-
+function ConclusionTermsSection({ rows, onUpdate, onAdd }) {
   return (
     <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -971,21 +981,41 @@ function ConclusionTermsSection({ conclusion, recommendations, onChange }) {
           <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-700">Final Notes</p>
           <h2 className="text-2xl font-black text-slate-950">Conclusion & Next Steps</h2>
         </div>
-        <span className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-emerald-700">2 items</span>
+        <span className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-emerald-700">{rows.length} {rows.length === 1 ? 'item' : 'items'}</span>
       </div>
       <div className="mt-5 grid gap-4">
         {rows.map((row, index) => (
-          <div key={row.id} className="grid gap-3 sm:grid-cols-[36px_180px_1fr] sm:items-center">
-            <span className="text-center text-lg font-black text-slate-950">{index + 1}.</span>
-            <span className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-center font-black text-emerald-800">{row.label}</span>
-            <input
-              className="form-input rounded-xl text-center"
-              value={row.value}
-              placeholder={row.placeholder}
-              onChange={(event) => onChange(row.id, event.target.value)}
-            />
+          <div key={`final-note-${index}`} className="rounded-2xl border border-slate-100 bg-slate-50/60 p-3 sm:p-4">
+            <div className="grid gap-4 lg:grid-cols-2">
+              <label className="grid gap-2 sm:grid-cols-[180px_1fr] sm:items-center">
+                <span className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-center font-black text-emerald-800">Conclusion</span>
+                <input
+                  className="form-input min-h-12 rounded-xl text-center"
+                  value={row.conclusion || ''}
+                  placeholder="Enter conclusion"
+                  onChange={(event) => onUpdate(index, 'conclusion', event.target.value)}
+                />
+              </label>
+              <label className="grid gap-2 sm:grid-cols-[180px_1fr] sm:items-center">
+                <span className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-center font-black text-emerald-800">Recommendations</span>
+                <input
+                  className="form-input min-h-12 rounded-xl text-center"
+                  value={row.recommendations || ''}
+                  placeholder="Enter recommendations or next steps"
+                  onChange={(event) => onUpdate(index, 'recommendations', event.target.value)}
+                />
+              </label>
+            </div>
           </div>
         ))}
+        <button
+          type="button"
+          onClick={onAdd}
+          className="btn-lift inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-emerald-200 bg-emerald-50/70 px-5 font-black text-emerald-800 hover:bg-emerald-100"
+        >
+          <Plus className="h-4 w-4" />
+          Add Note
+        </button>
       </div>
     </section>
   );

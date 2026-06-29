@@ -24,6 +24,11 @@ const ComplianceChecklistItemSchema = new mongoose.Schema({
   remark: { type: String, trim: true }
 }, { _id: false });
 
+const ComplianceFinalNoteSchema = new mongoose.Schema({
+  conclusion: { type: String, trim: true },
+  recommendations: { type: String, trim: true }
+}, { _id: false });
+
 const ComplianceHealthReportSchema = new mongoose.Schema({
   yearOfCommencement: { type: String, trim: true },
   establishmentDate: { type: String, trim: true },
@@ -38,6 +43,7 @@ const ComplianceHealthReportSchema = new mongoose.Schema({
   checklistReview: [ComplianceChecklistItemSchema],
   conclusion: { type: String, trim: true },
   recommendations: { type: String, trim: true },
+  finalNotes: [ComplianceFinalNoteSchema],
   screenshotReferences: [ScreenshotReferenceSchema],
   reviewedConfirmation: { type: Boolean, default: false },
   submittedAt: { type: Date }
