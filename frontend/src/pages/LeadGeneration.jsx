@@ -57,6 +57,7 @@ function createEmptyComplianceReport() {
     establishmentDate: '',
     organizationType: '',
     keyProductsBrands: '',
+    sharedFolderUploads: [],
     productCategory: '',
     eprRegistrationNumber: '',
     financialYearReviewed: '',
@@ -366,6 +367,45 @@ export default function LeadGeneration() {
     showToast(`${uploads.length} screenshot${uploads.length === 1 ? '' : 's'} uploaded.`, 'success');
   }
 
+  function handleSharedFolderUpload(event) {
+    const files = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (!files.length) return;
+
+    const uploads = files.map((file) => ({
+      name: file.name,
+      type: file.type || 'folder item',
+      size: file.size,
+      relativePath: file.webkitRelativePath || file.name,
+      uploadedAt: new Date().toISOString()
+    }));
+
+    setLead((current) => {
+      const report = { ...createEmptyComplianceReport(), ...(current.complianceHealthReport || {}) };
+      return {
+        ...current,
+        complianceHealthReport: {
+          ...report,
+          sharedFolderUploads: [...(report.sharedFolderUploads || []), ...uploads]
+        }
+      };
+    });
+    showToast(`${uploads.length} shared folder file${uploads.length === 1 ? '' : 's'} added.`, 'success');
+  }
+
+  function removeSharedFolderUpload(index) {
+    setLead((current) => {
+      const report = { ...createEmptyComplianceReport(), ...(current.complianceHealthReport || {}) };
+      return {
+        ...current,
+        complianceHealthReport: {
+          ...report,
+          sharedFolderUploads: (report.sharedFolderUploads || []).filter((_, itemIndex) => itemIndex !== index)
+        }
+      };
+    });
+  }
+
   function removeScreenshot(index) {
     setLead((current) => {
       const report = { ...createEmptyComplianceReport(), ...(current.complianceHealthReport || {}) };
@@ -594,6 +634,8 @@ export default function LeadGeneration() {
           onRemoveRow={removeReportRow}
           onScreenshotUpload={handleScreenshotUpload}
           onRemoveScreenshot={removeScreenshot}
+          onSharedFolderUpload={handleSharedFolderUpload}
+          onRemoveSharedFolderUpload={removeSharedFolderUpload}
           onOpenSubmit={() => {
             setReportReviewed(false);
             setReportSubmitPromptOpen(true);
@@ -840,6 +882,8 @@ function ComplianceHealthReportView({
   onRemoveRow,
   onScreenshotUpload,
   onRemoveScreenshot,
+  onSharedFolderUpload,
+  onRemoveSharedFolderUpload,
   onOpenSubmit
 }) {
   const finalNoteRows = Array.isArray(report.finalNotes) && report.finalNotes.length
@@ -928,7 +972,15 @@ function ComplianceHealthReportView({
             <ReportTextField label="Year of Commencement of Operations" value={report.yearOfCommencement} onChange={(value) => onUpdateField('yearOfCommencement', value)} />
             <ReportTextField label="Year of Establishment" value={report.establishmentDate} onChange={(value) => onUpdateField('establishmentDate', value)} />
             <ReportTextField label="Type of Organization" value={report.organizationType} onChange={(value) => onUpdateField('organizationType', value)} />
-            <ReportMultiSelectField label="Key Products / Brands" value={report.keyProductsBrands} options={keyProductBrandOptions} onChange={(value) => onUpdateField('keyProductsBrands', value)} />
+            <ReportMultiSelectField
+              label="Key Products / Brands"
+              value={report.keyProductsBrands}
+              options={keyProductBrandOptions}
+              uploads={report.sharedFolderUploads || []}
+              onChange={(value) => onUpdateField('keyProductsBrands', value)}
+              onUpload={onSharedFolderUpload}
+              onRemoveUpload={onRemoveSharedFolderUpload}
+            />
             <ReportTextField label="Product Category" value={report.productCategory} onChange={(value) => onUpdateField('productCategory', value)} />
             <ReportTextField label="EPR Registration Number" value={report.eprRegistrationNumber} onChange={(value) => onUpdateField('eprRegistrationNumber', value)} />
             <ReportTextField label="Financial Year Reviewed" value={report.financialYearReviewed} onChange={(value) => onUpdateField('financialYearReviewed', value)} />
@@ -1002,8 +1054,10 @@ function ReportTextField({ label, value, onChange }) {
   );
 }
 
-function ReportMultiSelectField({ label, value, options = [], onChange }) {
+function ReportMultiSelectField({ label, value, options = [], uploads = [], onChange, onUpload, onRemoveUpload }) {
   const [open, setOpen] = useState(false);
+  const fileInputRef = useRef(null);
+  const folderInputRef = useRef(null);
   const wrapperRef = useRef(null);
   const selected = String(value || '')
     .split(',')
@@ -1026,6 +1080,7 @@ function ReportMultiSelectField({ label, value, options = [], onChange }) {
     const exists = selected.includes(option);
     commit(exists ? selected.filter((item) => item !== option) : [...selected, option]);
   }
+  const sharedFolderSelected = selected.includes('Uploaded in shared folder');
 
   return (
     <Field label={label}>
@@ -1069,9 +1124,70 @@ function ReportMultiSelectField({ label, value, options = [], onChange }) {
             })}
           </div>
         )}
+        {sharedFolderSelected && (
+          <div className="mt-3 rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-sky-50 p-3 shadow-sm">
+            <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onUpload} />
+            <input ref={folderInputRef} type="file" multiple webkitdirectory="true" directory="true" className="hidden" onChange={onUpload} />
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-black text-slate-900">Shared folder upload</p>
+                <p className="mt-1 text-xs font-bold text-slate-500">Upload files or choose a full folder. File names and folder paths are saved with this report.</p>
+              </div>
+              <span className="rounded-lg bg-white px-3 py-2 text-xs font-black text-emerald-700 shadow-sm">{uploads.length} files</span>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="btn-lift inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-4 font-black text-emerald-800 shadow-sm hover:bg-emerald-50"
+              >
+                <Upload className="h-4 w-4" />
+                Choose Files
+              </button>
+              <button
+                type="button"
+                onClick={() => folderInputRef.current?.click()}
+                className="btn-lift inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 font-black text-white shadow-lg shadow-emerald-700/20 hover:bg-emerald-800"
+              >
+                <Upload className="h-4 w-4" />
+                Choose Folder
+              </button>
+            </div>
+            {uploads.length > 0 && (
+              <div className="mt-3 max-h-44 overflow-auto rounded-xl border border-slate-200 bg-white p-2">
+                {uploads.map((file, index) => (
+                  <div key={`${file.relativePath || file.name}-${index}`} className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-slate-50">
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-emerald-50 text-emerald-700">
+                      <Upload className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-black text-slate-800">{file.name}</p>
+                      <p className="truncate text-xs font-bold text-slate-500">{file.relativePath || file.type || 'Selected file'} - {formatFileSize(file.size)}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onRemoveUpload(index)}
+                      className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-red-100 text-red-500 hover:bg-red-50"
+                      title="Remove file"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </Field>
   );
+}
+
+function formatFileSize(size = 0) {
+  const bytes = Number(size) || 0;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function ConclusionTermsSection({ rows, frozenRows, onUpdate, onAdd, onRemove }) {

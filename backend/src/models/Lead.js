@@ -8,6 +8,14 @@ const ScreenshotReferenceSchema = new mongoose.Schema({
   uploadedAt: { type: Date, default: Date.now }
 }, { _id: false });
 
+const SharedFolderUploadSchema = new mongoose.Schema({
+  name: { type: String, trim: true },
+  type: { type: String, trim: true },
+  size: { type: Number, default: 0 },
+  relativePath: { type: String, trim: true },
+  uploadedAt: { type: Date, default: Date.now }
+}, { _id: false });
+
 const ComplianceObservationSchema = new mongoose.Schema({
   srNo: { type: String, trim: true },
   area: { type: String, trim: true },
@@ -34,6 +42,7 @@ const ComplianceHealthReportSchema = new mongoose.Schema({
   establishmentDate: { type: String, trim: true },
   organizationType: { type: String, trim: true },
   keyProductsBrands: { type: String, trim: true },
+  sharedFolderUploads: [SharedFolderUploadSchema],
   productCategory: { type: String, trim: true },
   eprRegistrationNumber: { type: String, trim: true },
   financialYearReviewed: { type: String, trim: true },
