@@ -841,8 +841,17 @@ function ComplianceHealthReportView({
   const finalNoteRows = Array.isArray(report.finalNotes) && report.finalNotes.length
     ? report.finalNotes
     : [{ conclusion: report.conclusion || '', recommendations: report.recommendations || '' }];
+  const frozenFinalNotesRef = useRef(null);
+  if (frozenFinalNotesRef.current === null) {
+    frozenFinalNotesRef.current = new Set(
+      finalNoteRows
+        .map((row, index) => ((row.conclusion || row.recommendations) ? index : null))
+        .filter((index) => index !== null)
+    );
+  }
 
   function updateFinalNote(index, field, value) {
+    if (frozenFinalNotesRef.current?.has(index)) return;
     const nextRows = finalNoteRows.map((row, rowIndex) => (rowIndex === index ? { ...row, [field]: value } : row));
     onUpdateField('finalNotes', nextRows);
     if (index === 0) onUpdateField(field, value);
@@ -850,6 +859,20 @@ function ComplianceHealthReportView({
 
   function addFinalNote() {
     onUpdateField('finalNotes', [...finalNoteRows, { conclusion: '', recommendations: '' }]);
+  }
+
+  function removeFinalNote(index) {
+    const nextRows = finalNoteRows.length > 1
+      ? finalNoteRows.filter((_, rowIndex) => rowIndex !== index)
+      : [{ conclusion: '', recommendations: '' }];
+    frozenFinalNotesRef.current = new Set(
+      [...(frozenFinalNotesRef.current || [])]
+        .filter((rowIndex) => rowIndex !== index)
+        .map((rowIndex) => (rowIndex > index ? rowIndex - 1 : rowIndex))
+    );
+    onUpdateField('finalNotes', nextRows);
+    onUpdateField('conclusion', nextRows[0]?.conclusion || '');
+    onUpdateField('recommendations', nextRows[0]?.recommendations || '');
   }
 
   const reportStats = [
@@ -941,8 +964,10 @@ function ComplianceHealthReportView({
 
         <ConclusionTermsSection
           rows={finalNoteRows}
+          frozenRows={frozenFinalNotesRef.current}
           onUpdate={updateFinalNote}
           onAdd={addFinalNote}
+          onRemove={removeFinalNote}
         />
 
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-end">
@@ -973,7 +998,7 @@ function ReportTextField({ label, value, onChange }) {
   );
 }
 
-function ConclusionTermsSection({ rows, onUpdate, onAdd }) {
+function ConclusionTermsSection({ rows, frozenRows, onUpdate, onAdd, onRemove }) {
   return (
     <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -985,23 +1010,41 @@ function ConclusionTermsSection({ rows, onUpdate, onAdd }) {
       </div>
       <div className="mt-5 grid gap-4">
         {rows.map((row, index) => (
-          <div key={`final-note-${index}`} className="rounded-2xl border border-slate-100 bg-slate-50/60 p-3 sm:p-4">
+          <div key={`final-note-${index}`} className="rounded-2xl border border-slate-100 bg-slate-50/60 p-3 shadow-sm ring-1 ring-white sm:p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-600 to-teal-600 text-sm font-black text-white shadow-lg shadow-emerald-700/20">
+                {index + 1}
+              </span>
+              {frozenRows?.has(index) && (
+                <span className="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-slate-500">Frozen</span>
+              )}
+              <button
+                type="button"
+                onClick={() => onRemove(index)}
+                className="btn-lift ml-auto inline-flex h-9 w-9 items-center justify-center rounded-xl border border-red-100 bg-white text-red-500 shadow-sm hover:bg-red-50"
+                title="Remove note"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
             <div className="grid gap-4 lg:grid-cols-2">
               <label className="grid gap-2 sm:grid-cols-[180px_1fr] sm:items-center">
                 <span className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-center font-black text-emerald-800">Conclusion</span>
                 <input
-                  className="form-input min-h-12 rounded-xl text-center"
+                  className={`form-input min-h-12 rounded-xl text-center ${frozenRows?.has(index) ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''}`}
                   value={row.conclusion || ''}
                   placeholder="Enter conclusion"
+                  readOnly={frozenRows?.has(index)}
                   onChange={(event) => onUpdate(index, 'conclusion', event.target.value)}
                 />
               </label>
               <label className="grid gap-2 sm:grid-cols-[180px_1fr] sm:items-center">
                 <span className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-center font-black text-emerald-800">Recommendations</span>
                 <input
-                  className="form-input min-h-12 rounded-xl text-center"
+                  className={`form-input min-h-12 rounded-xl text-center ${frozenRows?.has(index) ? 'cursor-not-allowed bg-slate-100 text-slate-500' : ''}`}
                   value={row.recommendations || ''}
                   placeholder="Enter recommendations or next steps"
+                  readOnly={frozenRows?.has(index)}
                   onChange={(event) => onUpdate(index, 'recommendations', event.target.value)}
                 />
               </label>
@@ -1224,17 +1267,17 @@ function LeadSubmitPrompt({ confirmed, saving, onConfirmChange, onClose, onYes, 
   return (
     <ConfirmationShell eyebrow="Lead submit" title="Do you want to process for COMPLIANCE HEALTH REPORT" onClose={onClose}>
       <div className="grid gap-3 sm:grid-cols-2">
-        <button type="button" onClick={onYes} className="btn-lift min-h-12 rounded-xl bg-gradient-to-r from-emerald-700 to-teal-700 px-5 font-black text-white shadow-lg shadow-emerald-700/20">Yes</button>
-        <button type="button" onClick={() => { setNoSelected(true); onConfirmChange(false); }} className="btn-lift min-h-12 rounded-xl border border-slate-200 bg-white px-5 font-black text-slate-700 hover:bg-slate-50">No</button>
+        <button type="button" onClick={onYes} className="btn-lift min-h-14 rounded-2xl bg-gradient-to-r from-emerald-700 to-teal-700 px-5 font-black text-white shadow-xl shadow-emerald-700/20">Yes, open report</button>
+        <button type="button" onClick={() => { setNoSelected(true); onConfirmChange(false); }} className="btn-lift min-h-14 rounded-2xl border border-slate-200 bg-white px-5 font-black text-slate-700 shadow-sm hover:bg-slate-50">No, submit lead</button>
       </div>
       {noSelected && (
         <>
-          <label className="mt-5 flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-inner">
+          <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-2xl border border-emerald-100 bg-gradient-to-r from-emerald-50 to-white p-4 shadow-inner">
             <input type="checkbox" checked={confirmed} onChange={(event) => onConfirmChange(event.target.checked)} className="mt-1 h-5 w-5 rounded accent-emerald-700" />
             <span className="font-black text-slate-800">I have checked all the details I filled in, and they are correct.</span>
           </label>
           <div className="mt-5 flex justify-end">
-            <button type="button" disabled={!confirmed || saving} onClick={onNoSubmit} className="btn-lift min-h-11 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 px-7 font-black text-white shadow-lg shadow-orange-600/20 disabled:cursor-not-allowed disabled:opacity-50">
+            <button type="button" disabled={!confirmed || saving} onClick={onNoSubmit} className="btn-lift min-h-12 rounded-2xl bg-gradient-to-r from-orange-500 to-orange-600 px-8 font-black text-white shadow-lg shadow-orange-600/20 disabled:cursor-not-allowed disabled:opacity-50">
               {saving ? 'Submitting...' : 'Submit'}
             </button>
           </div>
@@ -1247,12 +1290,12 @@ function LeadSubmitPrompt({ confirmed, saving, onConfirmChange, onClose, onYes, 
 function ReportSubmitPrompt({ checked, saving, onCheckedChange, onClose, onSubmit }) {
   return (
     <ConfirmationShell eyebrow="Final review" title="Submit COMPLIANCE HEALTH REPORT" onClose={onClose}>
-      <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-inner">
+      <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-emerald-100 bg-gradient-to-r from-emerald-50 to-white p-4 shadow-inner">
         <input type="checkbox" checked={checked} onChange={(event) => onCheckedChange(event.target.checked)} className="mt-1 h-5 w-5 rounded accent-emerald-700" />
         <span className="font-black text-slate-800">I have reviewed all the details I entered, and they are correct.</span>
       </label>
       <div className="mt-5 flex justify-end">
-        <button type="button" disabled={!checked || saving} onClick={onSubmit} className="btn-lift min-h-11 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 px-7 font-black text-white shadow-lg shadow-orange-600/20 disabled:cursor-not-allowed disabled:opacity-50">
+        <button type="button" disabled={!checked || saving} onClick={onSubmit} className="btn-lift min-h-12 rounded-2xl bg-gradient-to-r from-orange-500 to-orange-600 px-8 font-black text-white shadow-lg shadow-orange-600/20 disabled:cursor-not-allowed disabled:opacity-50">
           {saving ? 'Submitting...' : 'Submit'}
         </button>
       </div>
@@ -1262,18 +1305,25 @@ function ReportSubmitPrompt({ checked, saving, onCheckedChange, onClose, onSubmi
 
 function ConfirmationShell({ eyebrow, title, children, onClose }) {
   return (
-    <div className="fixed inset-0 z-[90] grid place-items-center bg-slate-950/55 px-4 py-6 backdrop-blur-sm">
-      <section className="w-full max-w-xl overflow-hidden rounded-[22px] border border-white/70 bg-white shadow-2xl shadow-slate-950/20 animate-toast-in">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-100 bg-gradient-to-r from-white via-emerald-50/50 to-sky-50/60 p-5">
-          <div className="min-w-0">
+    <div className="fixed inset-0 z-[90] grid place-items-center bg-slate-950/60 px-4 py-6 backdrop-blur-md">
+      <section className="w-full max-w-xl overflow-hidden rounded-[28px] border border-white/80 bg-white shadow-2xl shadow-slate-950/25 animate-toast-in">
+        <div className="relative overflow-hidden border-b border-slate-100 bg-gradient-to-br from-white via-emerald-50 to-sky-50 p-6">
+          <div className="relative flex items-start justify-between gap-4">
+            <div className="flex min-w-0 gap-4">
+              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-emerald-700 text-white shadow-xl shadow-emerald-700/20">
+                <CheckCircle2 className="h-6 w-6" />
+              </span>
+              <div className="min-w-0">
             {eyebrow && <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-700">{eyebrow}</p>}
             <h2 className="mt-1 text-2xl font-black leading-tight text-slate-950">{title}</h2>
+              </div>
+            </div>
+            <button type="button" onClick={onClose} className="btn-lift grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-800" title="Close">
+              <X className="h-5 w-5" />
+            </button>
           </div>
-          <button type="button" onClick={onClose} className="btn-lift grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800" title="Close">
-            <X className="h-5 w-5" />
-          </button>
         </div>
-        <div className="p-5">{children}</div>
+        <div className="bg-white p-6">{children}</div>
       </section>
     </div>
   );
