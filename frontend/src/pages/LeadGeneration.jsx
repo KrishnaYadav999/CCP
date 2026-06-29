@@ -837,43 +837,48 @@ function ComplianceHealthReportView({
   onRemoveScreenshot,
   onOpenSubmit
 }) {
-  const inheritedDetails = [
-    ['Company', lead.company],
-    ['Address', [lead.addressLine1, lead.addressLine2, lead.addressLine3, lead.city, lead.state, lead.pinCode].filter(Boolean).join(', ')],
-    ['Contact', [lead.contactPerson, lead.mobileNo1, lead.emails].filter(Boolean).join(' | ')],
-    ['Assign', lead.assignedToText || lead.assignedBy || lead.importedCreatedBy]
+  const reportStats = [
+    { label: 'Overview Fields', value: '7' },
+    { label: 'Observation Rows', value: String((report.keyObservations || []).length + (report.annualReturnObservations || []).length) },
+    { label: 'Checklist Items', value: String((report.checklistReview || []).length) },
+    { label: 'Screenshots', value: String(report.screenshotReferences?.length || 0) }
   ];
 
   return (
     <div className="px-4 py-6 sm:px-6 lg:px-8">
-      <div className="rounded-[28px] bg-gradient-to-br from-emerald-50 via-white to-cyan-50 p-4 shadow-sm ring-1 ring-emerald-100 sm:p-5 lg:p-6">
-        <div className="flex flex-wrap items-center justify-between gap-5">
+      <div className="rounded-[24px] bg-gradient-to-br from-emerald-50 via-white to-cyan-50 p-4 shadow-sm ring-1 ring-emerald-100 sm:p-5 lg:p-6">
+        <div className="overflow-hidden rounded-2xl border border-emerald-100 bg-white shadow-sm">
+          <div className="flex flex-col gap-5 p-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-4">
-            <button type="button" onClick={onBack} className="btn-lift inline-flex h-11 w-11 items-center justify-center rounded-lg border border-emerald-100 bg-white text-emerald-700 shadow-sm" title="Back">
+            <button type="button" onClick={onBack} className="btn-lift inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-emerald-100 bg-emerald-50 text-emerald-700 shadow-sm" title="Back">
               <ArrowLeft className="h-5 w-5" />
             </button>
-            <div>
+            <div className="min-w-0">
               <p className="text-sm font-black uppercase tracking-[0.18em] text-emerald-700">Compliance</p>
-              <h1 className="mt-1 text-3xl font-black text-slate-950">COMPLIANCE HEALTH REPORT</h1>
+              <h1 className="mt-1 text-2xl font-black text-slate-950 sm:text-3xl">COMPLIANCE HEALTH REPORT</h1>
+              <p className="mt-2 max-w-2xl text-sm font-bold leading-6 text-slate-500">
+                Fill the report-specific details below. Lead details already captured earlier are not repeated here.
+              </p>
             </div>
           </div>
-          <div className="rounded-2xl border border-emerald-100 bg-white px-4 py-3 shadow-sm">
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Screenshots</p>
-            <p className="mt-1 font-black text-emerald-700">{report.screenshotReferences?.length || 0} uploaded</p>
-          </div>
-        </div>
-
-        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Already captured from lead</p>
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {inheritedDetails.map(([label, value]) => (
-              <div key={label} className="rounded-lg border border-emerald-100 bg-emerald-50/60 p-4">
-                <p className="text-xs font-black uppercase tracking-[0.12em] text-emerald-700">{label}</p>
-                <p className="mt-2 min-h-10 break-words font-black text-slate-900">{value || '-'}</p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:min-w-[520px]">
+            {reportStats.map((stat) => (
+              <div key={stat.label} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-3">
+                <p className="text-2xl font-black text-slate-950">{stat.value}</p>
+                <p className="mt-1 text-[11px] font-black uppercase leading-4 text-slate-500">{stat.label}</p>
               </div>
             ))}
           </div>
-        </section>
+        </div>
+          <div className="grid border-t border-slate-100 bg-slate-50/70 text-sm font-black text-slate-600 md:grid-cols-4">
+            {['1. Overview', '2. Objective', '3. Observations', '4. Evidence'].map((item) => (
+              <div key={item} className="flex min-h-12 items-center gap-2 border-slate-100 px-5 py-3 md:border-r last:md:border-r-0">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                {item}
+              </div>
+            ))}
+          </div>
+        </div>
 
         <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <ReportSectionTitle title="1. Company Overview" />
