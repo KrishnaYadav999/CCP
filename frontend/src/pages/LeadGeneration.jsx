@@ -7,10 +7,10 @@ import ProfileModal from '../components/dashboard/ProfileModal';
 import api, { getApiErrorMessage } from '../services/api';
 
 const defaultComplianceObservations = [
-  { srNo: 'Part A', area: 'General Information', observation: '', potentialRisk: '', screenshotReference: '' },
-  { srNo: 'Part B', area: 'Liquid and gaseous emissions', observation: '', potentialRisk: '', screenshotReference: '' },
-  { srNo: 'Part C', area: 'Waste', observation: '', potentialRisk: '', screenshotReference: '' },
-  { srNo: 'Part D', area: 'Waste Action Plan', observation: '', potentialRisk: '', screenshotReference: '' }
+  { srNo: '1', area: 'Part A General Information', observation: '', potentialRisk: '', screenshotReference: '' },
+  { srNo: '2', area: 'Part B Liquid and gaseous emissions', observation: '', potentialRisk: '', screenshotReference: '' },
+  { srNo: '3', area: 'Part C Waste', observation: '', potentialRisk: '', screenshotReference: '' },
+  { srNo: '4', area: 'Part D Waste Action Plan', observation: '', potentialRisk: '', screenshotReference: '' }
 ];
 
 const defaultAnnualReturnObservations = [
@@ -903,7 +903,8 @@ function ComplianceHealthReportView({
           rows={report.keyObservations || []}
           defaultOpen
           onUpdate={(index, field, value) => onUpdateRow('keyObservations', index, field, value)}
-          onAdd={() => onAddRow('keyObservations', { srNo: '', area: '', observation: '', potentialRisk: '', screenshotReference: '' })}
+          onUpload={handleScreenshotUpload}
+          onAdd={() => onAddRow('keyObservations', { srNo: String((report.keyObservations || []).length + 1), area: '', observation: '', potentialRisk: '', screenshotReference: '' })}
           onRemove={(index) => onRemoveRow('keyObservations', index)}
         />
 
@@ -912,7 +913,8 @@ function ComplianceHealthReportView({
           rows={report.annualReturnObservations || []}
           defaultOpen={false}
           onUpdate={(index, field, value) => onUpdateRow('annualReturnObservations', index, field, value)}
-          onAdd={() => onAddRow('annualReturnObservations', { srNo: '', area: '', observation: '', potentialRisk: '', screenshotReference: '' })}
+          onUpload={handleScreenshotUpload}
+          onAdd={() => onAddRow('annualReturnObservations', { srNo: String((report.annualReturnObservations || []).length + 1), area: 'Annual Return', observation: '', potentialRisk: '', screenshotReference: '' })}
           onRemove={(index) => onRemoveRow('annualReturnObservations', index)}
         />
 
@@ -923,14 +925,6 @@ function ComplianceHealthReportView({
         />
 
         <ScreenshotReferencePanel files={report.screenshotReferences || []} onUpload={onScreenshotUpload} onRemove={onRemoveScreenshot} />
-
-        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <ReportSectionTitle title="5. Conclusion & Next Steps" />
-          <div className="mt-5 grid gap-5 lg:grid-cols-2">
-            <Field label="Conclusion"><textarea className="form-input min-h-[150px] resize-y py-3" value={report.conclusion} onChange={(event) => onUpdateField('conclusion', event.target.value)} /></Field>
-            <Field label="Recommendations"><textarea className="form-input min-h-[150px] resize-y py-3" value={report.recommendations} onChange={(event) => onUpdateField('recommendations', event.target.value)} /></Field>
-          </div>
-        </section>
 
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-end">
           <button type="button" onClick={onBack} className="btn-lift min-h-11 rounded-xl border border-slate-200 bg-white px-8 font-black text-slate-700">Back</button>
@@ -945,8 +939,9 @@ function ComplianceHealthReportView({
 
 function ReportSectionTitle({ title }) {
   return (
-    <div className="rounded-lg bg-yellow-300 px-4 py-2 text-center text-lg font-black text-slate-950">
-      {title}
+    <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-sky-50 px-4 py-3">
+      <h2 className="text-lg font-black text-slate-950">{title}</h2>
+      <span className="h-2 w-16 rounded-full bg-gradient-to-r from-emerald-500 to-sky-500" />
     </div>
   );
 }
@@ -959,10 +954,10 @@ function ReportTextField({ label, value, onChange }) {
   );
 }
 
-function ObservationTable({ title, rows, onUpdate, onAdd, onRemove, defaultOpen = true }) {
+function ObservationTable({ title, rows, onUpdate, onUpload, onAdd, onRemove, defaultOpen = true }) {
   return (
     <details open={defaultOpen} className="group mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 border-b border-slate-100 p-4">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 border-b border-slate-100 bg-white p-4 transition hover:bg-emerald-50/40">
         <span className="font-black text-slate-950">{title}</span>
         <span className="rounded-lg bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">{rows.length} rows</span>
       </summary>
@@ -970,23 +965,49 @@ function ObservationTable({ title, rows, onUpdate, onAdd, onRemove, defaultOpen 
         <table className="w-full min-w-[980px] table-fixed border-collapse text-left text-sm">
           <thead className="bg-slate-50 text-xs font-black uppercase tracking-[0.06em] text-slate-500">
             <tr>
-              <th className="w-28 border border-slate-200 px-3 py-3">Sr. No.</th>
-              <th className="w-56 border border-slate-200 px-3 py-3">Area</th>
-              <th className="border border-slate-200 px-3 py-3">Observation</th>
-              <th className="border border-slate-200 px-3 py-3">Potential Risk</th>
-              <th className="w-64 border border-slate-200 px-3 py-3">Screenshot Reference</th>
-              <th className="w-20 border border-slate-200 px-3 py-3">Action</th>
+              <th className="w-24 border border-slate-200 px-3 py-3 text-center">Sr. No.</th>
+              <th className="w-72 border border-slate-200 px-3 py-3 text-center">Area</th>
+              <th className="border border-slate-200 px-3 py-3 text-center">Observation</th>
+              <th className="border border-slate-200 px-3 py-3 text-center">Potential Risk</th>
+              <th className="w-72 border border-slate-200 px-3 py-3 text-center">Screenshot Reference</th>
+              <th className="w-20 border border-slate-200 px-3 py-3 text-center">Action</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row, index) => (
               <tr key={`${row.srNo}-${index}`}>
-                {['srNo', 'area', 'observation', 'potentialRisk', 'screenshotReference'].map((field) => (
-                  <td key={field} className="border border-slate-200 p-2 align-top">
-                    <textarea className="form-input min-h-[72px] resize-y rounded-lg py-3 text-sm" value={row[field] || ''} onChange={(event) => onUpdate(index, field, event.target.value)} />
-                  </td>
-                ))}
-                <td className="border border-slate-200 p-2 align-top">
+                <td className="border border-slate-200 p-2 align-middle">
+                  <input className="form-input min-h-12 rounded-lg text-center text-sm" value={row.srNo || ''} onChange={(event) => onUpdate(index, 'srNo', event.target.value)} />
+                </td>
+                <td className="border border-slate-200 p-2 align-middle">
+                  <textarea className="form-input min-h-12 resize-y rounded-lg py-3 text-center text-sm font-black" value={row.area || ''} onChange={(event) => onUpdate(index, 'area', event.target.value)} />
+                </td>
+                <td className="border border-slate-200 p-2 align-middle">
+                  <textarea className="form-input min-h-12 resize-y rounded-lg py-3 text-center text-sm" value={row.observation || ''} onChange={(event) => onUpdate(index, 'observation', event.target.value)} />
+                </td>
+                <td className="border border-slate-200 p-2 align-middle">
+                  <textarea className="form-input min-h-12 resize-y rounded-lg py-3 text-center text-sm" value={row.potentialRisk || ''} onChange={(event) => onUpdate(index, 'potentialRisk', event.target.value)} />
+                </td>
+                <td className="border border-slate-200 p-2 align-middle">
+                  <div className="grid gap-2">
+                    <label className="btn-lift inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-black text-emerald-700 hover:bg-emerald-100">
+                      <Upload className="h-4 w-4" /> Choose Files
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/*,.pdf"
+                        className="sr-only"
+                        onChange={(event) => {
+                          const names = Array.from(event.target.files || []).map((file) => file.name);
+                          if (names.length) onUpdate(index, 'screenshotReference', names.join(', '));
+                          onUpload?.(event);
+                        }}
+                      />
+                    </label>
+                    <input className="form-input min-h-10 rounded-lg text-center text-xs" value={row.screenshotReference || ''} placeholder="No file selected" onChange={(event) => onUpdate(index, 'screenshotReference', event.target.value)} />
+                  </div>
+                </td>
+                <td className="border border-slate-200 p-2 align-middle text-center">
                   <button type="button" onClick={() => onRemove(index)} className="grid h-10 w-10 place-items-center rounded-lg border border-red-200 text-red-600 hover:bg-red-50" title="Remove">
                     <X className="h-4 w-4" />
                   </button>
@@ -1006,9 +1027,16 @@ function ObservationTable({ title, rows, onUpdate, onAdd, onRemove, defaultOpen 
 }
 
 function ChecklistReviewTable({ rows, onUpdate, defaultOpen = false }) {
+  const groupedRows = rows.reduce((groups, row, index) => {
+    const key = row.part || 'Other';
+    if (!groups[key]) groups[key] = [];
+    groups[key].push({ ...row, originalIndex: index });
+    return groups;
+  }, {});
+
   return (
     <details open={defaultOpen} className="group mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 border-b border-slate-100 p-4">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 border-b border-slate-100 bg-white p-4 transition hover:bg-amber-50/40">
         <span className="font-black text-slate-950">4. Compliance Checklist Review</span>
         <span className="rounded-lg bg-amber-50 px-3 py-1 text-xs font-black text-amber-700">{rows.length} checks</span>
       </summary>
@@ -1016,33 +1044,47 @@ function ChecklistReviewTable({ rows, onUpdate, defaultOpen = false }) {
         <table className="w-full min-w-[920px] table-fixed border-collapse text-left text-sm">
           <thead className="bg-slate-50 text-xs font-black uppercase tracking-[0.06em] text-slate-500">
             <tr>
-              <th className="w-24 border border-slate-200 px-3 py-3">Sr. No.</th>
-              <th className="w-56 border border-slate-200 px-3 py-3">Part</th>
-              <th className="border border-slate-200 px-3 py-3">Compliance Requirement</th>
-              <th className="w-52 border border-slate-200 px-3 py-3">Status</th>
-              <th className="w-64 border border-slate-200 px-3 py-3">Remark</th>
+              <th className="w-24 border border-slate-200 px-3 py-3 text-center">Sr. No.</th>
+              <th className="border border-slate-200 px-3 py-3 text-center">Compliance Requirement</th>
+              <th className="w-52 border border-slate-200 px-3 py-3 text-center">Status</th>
+              <th className="w-64 border border-slate-200 px-3 py-3 text-center">Remark</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, index) => (
-              <tr key={`${row.srNo}-${row.complianceRequirement}`}>
-                <td className="border border-slate-200 p-2"><input className="form-input min-h-10 rounded-lg" value={row.srNo || ''} onChange={(event) => onUpdate(index, 'srNo', event.target.value)} /></td>
-                <td className="border border-slate-200 p-2"><input className="form-input min-h-10 rounded-lg" value={row.part || ''} onChange={(event) => onUpdate(index, 'part', event.target.value)} /></td>
-                <td className="border border-slate-200 p-2"><textarea className="form-input min-h-[58px] resize-y rounded-lg py-3" value={row.complianceRequirement || ''} onChange={(event) => onUpdate(index, 'complianceRequirement', event.target.value)} /></td>
-                <td className="border border-slate-200 p-2">
-                  <select className="form-input min-h-10 rounded-lg" value={row.status || ''} onChange={(event) => onUpdate(index, 'status', event.target.value)}>
-                    <option value="">Select</option>
-                    <option>Yes</option>
-                    <option>No</option>
-                    <option>Mentioned</option>
-                    <option>Uploaded</option>
-                    <option>Not Uploaded</option>
-                    <option>Not Mentioned</option>
-                    <option>Not Applicable</option>
-                  </select>
-                </td>
-                <td className="border border-slate-200 p-2"><textarea className="form-input min-h-[58px] resize-y rounded-lg py-3" value={row.remark || ''} onChange={(event) => onUpdate(index, 'remark', event.target.value)} /></td>
-              </tr>
+            {Object.entries(groupedRows).map(([part, items]) => (
+              <React.Fragment key={part}>
+                <tr>
+                  <td colSpan={4} className="border border-slate-200 bg-gradient-to-r from-emerald-50 to-sky-50 px-4 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <input
+                        className="min-h-10 rounded-xl border border-emerald-100 bg-white px-4 text-center text-sm font-black text-emerald-800 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
+                        value={part}
+                        onChange={(event) => items.forEach((item) => onUpdate(item.originalIndex, 'part', event.target.value))}
+                      />
+                      <span className="rounded-lg bg-white px-3 py-1 text-xs font-black uppercase tracking-[0.1em] text-slate-500 ring-1 ring-slate-200">{items.length} items</span>
+                    </div>
+                  </td>
+                </tr>
+                {items.map((row) => (
+                  <tr key={`${row.srNo}-${row.complianceRequirement}`}>
+                    <td className="border border-slate-200 p-2 align-middle"><input className="form-input min-h-10 rounded-lg text-center" value={row.srNo || ''} onChange={(event) => onUpdate(row.originalIndex, 'srNo', event.target.value)} /></td>
+                    <td className="border border-slate-200 p-2 align-middle"><textarea className="form-input min-h-[58px] resize-y rounded-lg py-3 text-center font-black" value={row.complianceRequirement || ''} onChange={(event) => onUpdate(row.originalIndex, 'complianceRequirement', event.target.value)} /></td>
+                    <td className="border border-slate-200 p-2 align-middle">
+                      <select className="form-input min-h-10 rounded-lg text-center" value={row.status || ''} onChange={(event) => onUpdate(row.originalIndex, 'status', event.target.value)}>
+                        <option value="">Select</option>
+                        <option>Yes</option>
+                        <option>No</option>
+                        <option>Mentioned</option>
+                        <option>Uploaded</option>
+                        <option>Not Uploaded</option>
+                        <option>Not Mentioned</option>
+                        <option>Not Applicable</option>
+                      </select>
+                    </td>
+                    <td className="border border-slate-200 p-2 align-middle"><textarea className="form-input min-h-[58px] resize-y rounded-lg py-3 text-center" value={row.remark || ''} onChange={(event) => onUpdate(row.originalIndex, 'remark', event.target.value)} /></td>
+                  </tr>
+                ))}
+              </React.Fragment>
             ))}
           </tbody>
         </table>
@@ -1113,19 +1155,19 @@ function LeadSubmitPrompt({ confirmed, saving, onConfirmChange, onClose, onYes, 
   const [noSelected, setNoSelected] = useState(false);
 
   return (
-    <ConfirmationShell title="Do you want to process for COMPLIANCE HEALTH REPORT" onClose={onClose}>
+    <ConfirmationShell eyebrow="Lead submit" title="Do you want to process for COMPLIANCE HEALTH REPORT" onClose={onClose}>
       <div className="grid gap-3 sm:grid-cols-2">
-        <button type="button" onClick={onYes} className="btn-lift min-h-12 rounded-xl bg-emerald-700 px-5 font-black text-white shadow-lg shadow-emerald-700/20">Yes</button>
-        <button type="button" onClick={() => { setNoSelected(true); onConfirmChange(false); }} className="btn-lift min-h-12 rounded-xl border border-slate-200 bg-white px-5 font-black text-slate-700">No</button>
+        <button type="button" onClick={onYes} className="btn-lift min-h-12 rounded-xl bg-gradient-to-r from-emerald-700 to-teal-700 px-5 font-black text-white shadow-lg shadow-emerald-700/20">Yes</button>
+        <button type="button" onClick={() => { setNoSelected(true); onConfirmChange(false); }} className="btn-lift min-h-12 rounded-xl border border-slate-200 bg-white px-5 font-black text-slate-700 hover:bg-slate-50">No</button>
       </div>
       {noSelected && (
         <>
-          <label className="mt-5 flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <input type="checkbox" checked={confirmed} onChange={(event) => onConfirmChange(event.target.checked)} className="mt-1 h-5 w-5 accent-emerald-700" />
+          <label className="mt-5 flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-inner">
+            <input type="checkbox" checked={confirmed} onChange={(event) => onConfirmChange(event.target.checked)} className="mt-1 h-5 w-5 rounded accent-emerald-700" />
             <span className="font-black text-slate-800">I have checked all the details I filled in, and they are correct.</span>
           </label>
           <div className="mt-5 flex justify-end">
-            <button type="button" disabled={!confirmed || saving} onClick={onNoSubmit} className="btn-lift min-h-11 rounded-xl bg-orange-600 px-7 font-black text-white shadow-lg shadow-orange-600/20 disabled:cursor-not-allowed disabled:opacity-50">
+            <button type="button" disabled={!confirmed || saving} onClick={onNoSubmit} className="btn-lift min-h-11 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 px-7 font-black text-white shadow-lg shadow-orange-600/20 disabled:cursor-not-allowed disabled:opacity-50">
               {saving ? 'Submitting...' : 'Submit'}
             </button>
           </div>
@@ -1137,13 +1179,13 @@ function LeadSubmitPrompt({ confirmed, saving, onConfirmChange, onClose, onYes, 
 
 function ReportSubmitPrompt({ checked, saving, onCheckedChange, onClose, onSubmit }) {
   return (
-    <ConfirmationShell title="Submit COMPLIANCE HEALTH REPORT" onClose={onClose}>
-      <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
-        <input type="checkbox" checked={checked} onChange={(event) => onCheckedChange(event.target.checked)} className="mt-1 h-5 w-5 accent-emerald-700" />
+    <ConfirmationShell eyebrow="Final review" title="Submit COMPLIANCE HEALTH REPORT" onClose={onClose}>
+      <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-inner">
+        <input type="checkbox" checked={checked} onChange={(event) => onCheckedChange(event.target.checked)} className="mt-1 h-5 w-5 rounded accent-emerald-700" />
         <span className="font-black text-slate-800">I have reviewed all the details I entered, and they are correct.</span>
       </label>
       <div className="mt-5 flex justify-end">
-        <button type="button" disabled={!checked || saving} onClick={onSubmit} className="btn-lift min-h-11 rounded-xl bg-orange-600 px-7 font-black text-white shadow-lg shadow-orange-600/20 disabled:cursor-not-allowed disabled:opacity-50">
+        <button type="button" disabled={!checked || saving} onClick={onSubmit} className="btn-lift min-h-11 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 px-7 font-black text-white shadow-lg shadow-orange-600/20 disabled:cursor-not-allowed disabled:opacity-50">
           {saving ? 'Submitting...' : 'Submit'}
         </button>
       </div>
@@ -1151,13 +1193,16 @@ function ReportSubmitPrompt({ checked, saving, onCheckedChange, onClose, onSubmi
   );
 }
 
-function ConfirmationShell({ title, children, onClose }) {
+function ConfirmationShell({ eyebrow, title, children, onClose }) {
   return (
-    <div className="fixed inset-0 z-[90] grid place-items-center bg-slate-950/50 px-4 py-6">
-      <section className="w-full max-w-xl overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-100 p-5">
-          <h2 className="text-2xl font-black text-slate-950">{title}</h2>
-          <button type="button" onClick={onClose} className="grid h-10 w-10 place-items-center rounded-lg text-slate-500 hover:bg-slate-100" title="Close">
+    <div className="fixed inset-0 z-[90] grid place-items-center bg-slate-950/55 px-4 py-6 backdrop-blur-sm">
+      <section className="w-full max-w-xl overflow-hidden rounded-[22px] border border-white/70 bg-white shadow-2xl shadow-slate-950/20 animate-toast-in">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 bg-gradient-to-r from-white via-emerald-50/50 to-sky-50/60 p-5">
+          <div className="min-w-0">
+            {eyebrow && <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-700">{eyebrow}</p>}
+            <h2 className="mt-1 text-2xl font-black leading-tight text-slate-950">{title}</h2>
+          </div>
+          <button type="button" onClick={onClose} className="btn-lift grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800" title="Close">
             <X className="h-5 w-5" />
           </button>
         </div>
