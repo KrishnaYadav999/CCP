@@ -6,6 +6,7 @@ const { ADMIN_ROLES } = require('../constants/roles');
 const asyncHandler = require('../utils/asyncHandler');
 
 router.post('/request-otp', asyncHandler(authCtrl.requestOtp));
+router.post('/resend-otp', asyncHandler(authCtrl.resendOtp));
 router.post('/verify-otp', asyncHandler(authCtrl.verifyOtp));
 router.get('/me', requireAuth, asyncHandler(authCtrl.me));
 router.put('/me', requireAuth, asyncHandler(authCtrl.updateMe));

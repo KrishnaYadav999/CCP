@@ -7,17 +7,20 @@ import api, { getApiErrorMessage } from '../services/api'
 export default function VerifyOtp(){
   const [otp, setOtp] = useState('')
   const [loading, setLoading] = useState(false)
+  const [resending, setResending] = useState(false)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const navigate = useNavigate()
   const location = useLocation()
   const email = location.state?.email || localStorage.getItem('login_email') || ''
   const password = location.state?.password || ''
-  const devOtp = import.meta.env.DEV ? localStorage.getItem('dev_otp') : ''
+  const [devOtp, setDevOtp] = useState(import.meta.env.DEV ? localStorage.getItem('dev_otp') || '' : '')
 
   async function handleVerify(e){
     e.preventDefault()
     setLoading(true)
     setError('')
+    setNotice('')
     try{
       if (!password) {
         setError('Session expired. Please login again.')
@@ -31,6 +34,31 @@ export default function VerifyOtp(){
       console.error(err)
       setError(getApiErrorMessage(err, 'Invalid OTP'))
     }finally{ setLoading(false) }
+  }
+
+  async function handleResend(){
+    setResending(true)
+    setError('')
+    setNotice('')
+    try{
+      if (!password) {
+        setError('Session expired. Please login again.')
+        return
+      }
+      const res = await api.post('/auth/resend-otp', { email, password })
+      if (import.meta.env.DEV && res.data?.devOtp) {
+        localStorage.setItem('dev_otp', res.data.devOtp)
+        setDevOtp(res.data.devOtp)
+      } else {
+        localStorage.removeItem('dev_otp')
+        setDevOtp('')
+      }
+      setOtp('')
+      setNotice(res.data?.message || 'OTP resent successfully.')
+    }catch(err){
+      console.error(err)
+      setError(getApiErrorMessage(err, 'Unable to resend OTP'))
+    }finally{ setResending(false) }
   }
 
   return (
@@ -57,14 +85,25 @@ export default function VerifyOtp(){
           </div>
         </label>
         {devOtp && <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">Development OTP: {devOtp}</p>}
+        {notice && <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{notice}</p>}
         {error && <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</p>}
-        <button className="btn-lift relative w-full overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-700 via-teal-700 to-sky-700 px-5 py-4 font-black text-white shadow-xl shadow-emerald-900/20 transition disabled:cursor-not-allowed disabled:opacity-70" disabled={loading || !password}>
+        <button className="btn-lift relative w-full overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-700 via-teal-700 to-sky-700 px-5 py-4 font-black text-white shadow-xl shadow-emerald-900/20 transition disabled:cursor-not-allowed disabled:opacity-70" disabled={loading || resending || !password}>
           <span className="relative">{loading ? 'Verifying...' : 'Verify and login'}</span>
         </button>
-        <Link to="/" className="inline-flex items-center gap-2 text-sm font-bold text-teal-700 hover:text-teal-900">
-          <ArrowLeft className="h-4 w-4" />
-          Use a different email
-        </Link>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <button
+            type="button"
+            onClick={handleResend}
+            disabled={loading || resending || !password}
+            className="btn-lift inline-flex min-h-11 items-center justify-center rounded-xl border border-emerald-200 bg-white px-5 font-black text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {resending ? 'Resending OTP...' : 'Resend OTP'}
+          </button>
+          <Link to="/" className="inline-flex items-center gap-2 text-sm font-bold text-teal-700 hover:text-teal-900">
+            <ArrowLeft className="h-4 w-4" />
+            Use a different email
+          </Link>
+        </div>
       </form>
     </AuthLayout>
   )

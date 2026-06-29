@@ -15,6 +15,91 @@ function generateOtp() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
+async function findPasswordValidatedUser(email, password) {
+  if (!email) {
+    const error = new Error('Email required');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!password) {
+    const error = new Error('Password required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const user = await User.findOne({ email });
+  if (!user) {
+    const error = new Error('User not found. Contact admin.');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (!user.isActive) {
+    const error = new Error('Your account is inactive. Contact admin.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  if (user.password) {
+    const matches = await bcrypt.compare(password, user.password);
+    if (!matches) {
+      const error = new Error('Invalid email or password');
+      error.statusCode = 401;
+      throw error;
+    }
+  } else {
+    if (password.length < 8) {
+      const error = new Error('Password must be at least 8 characters');
+      error.statusCode = 400;
+      throw error;
+    }
+    user.password = await bcrypt.hash(password, 10);
+  }
+
+  return user;
+}
+
+async function issueOtp(user) {
+  const otp = generateOtp();
+  user.otp = otp;
+  user.otpExpires = Date.now() + 10 * 60 * 1000;
+  await user.save();
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#0f172a">
+      <h2 style="margin:0 0 12px">Your CCP login OTP</h2>
+      <p>Your secure one-time password is:</p>
+      <p style="font-size:28px;font-weight:800;letter-spacing:4px;margin:18px 0">${otp}</p>
+      <p>This OTP expires in 10 minutes.</p>
+    </div>
+  `;
+
+  try {
+    await sendMail(user.email, 'Your CCP Login OTP', html);
+  } catch (err) {
+    console.error('Mail error', {
+      message: err.message,
+      code: err.code,
+      command: err.command,
+      response: err.response
+    });
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`Development OTP for ${user.email}: ${otp}`);
+      return {
+        ok: true,
+        message: 'OTP generated. SMTP failed in development, so use the displayed development OTP.',
+        devOtp: otp
+      };
+    }
+
+    const error = new Error(`Unable to send OTP email: ${err.message}`);
+    error.statusCode = 502;
+    throw error;
+  }
+
+  return { ok: true, message: 'OTP sent successfully' };
+}
+
 function readAvatarUrl(value) {
   if (value === undefined || value === null || value === '') return '';
 
@@ -39,40 +124,25 @@ function readAvatarUrl(value) {
 exports.requestOtp = async (req, res) => {
   const email = String(req.body.email || '').toLowerCase().trim();
   const password = String(req.body.password || '');
-  if (!email) return res.status(400).json({ error: 'Email required' });
-  if (!password) return res.status(400).json({ error: 'Password required' });
-  let user = await User.findOne({ email });
-  if (!user) {
-    // user accounts are created by admin only
-    return res.status(404).json({ error: 'User not found. Contact admin.' });
-  }
-
-  if (!user.isActive) return res.status(403).json({ error: 'Your account is inactive. Contact admin.' });
-
-  if (user.password) {
-    const matches = await bcrypt.compare(password, user.password);
-    if (!matches) return res.status(401).json({ error: 'Invalid email or password' });
-  } else {
-    if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
-    user.password = await bcrypt.hash(password, 10);
-  }
-
-  const otp = generateOtp();
-  user.otp = otp;
-  user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
-  await user.save();
-
-  const html = `<p>Your CCP login OTP is <b>${otp}</b>.</p><p>It expires in 10 minutes.</p>`;
   try {
-    await sendMail(user.email, 'Your Login OTP', html);
+    const user = await findPasswordValidatedUser(email, password);
+    const result = await issueOtp(user);
+    return res.json(result);
   } catch (err) {
-    console.error('Mail error', err);
-    if (process.env.NODE_ENV !== 'production') {
-      console.log(`Development OTP for ${user.email}: ${otp}`);
-      return res.json({ ok: true, message: 'OTP generated. SMTP failed in development.', devOtp: otp });
-    }
+    return res.status(err.statusCode || 500).json({ error: err.message || 'Unable to send OTP' });
   }
-  return res.json({ ok: true, message: 'OTP sent if email exists' });
+};
+
+exports.resendOtp = async (req, res) => {
+  const email = String(req.body.email || '').toLowerCase().trim();
+  const password = String(req.body.password || '');
+  try {
+    const user = await findPasswordValidatedUser(email, password);
+    const result = await issueOtp(user);
+    return res.json({ ...result, message: result.devOtp ? result.message : 'OTP resent successfully' });
+  } catch (err) {
+    return res.status(err.statusCode || 500).json({ error: err.message || 'Unable to resend OTP' });
+  }
 };
 
 exports.verifyOtp = async (req, res) => {
