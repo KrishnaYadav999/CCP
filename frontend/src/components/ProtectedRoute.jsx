@@ -6,6 +6,12 @@ export default function ProtectedRoute({ children }) {
   const [state, setState] = useState({ loading: true, allowed: false })
 
   useEffect(() => {
+    const token = localStorage.getItem('token')
+    if (!token) {
+      setState({ loading: false, allowed: false })
+      return
+    }
+
     api.get('/auth/me')
       .then(() => setState({ loading: false, allowed: true }))
       .catch(() => {

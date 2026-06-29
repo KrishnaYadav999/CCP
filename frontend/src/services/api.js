@@ -19,6 +19,28 @@ api.interceptors.request.use((config) => {
   return config
 })
 
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const status = error?.response?.status
+    const url = String(error?.config?.url || '')
+    const isLoginRequest =
+      url.includes('/auth/request-otp') ||
+      url.includes('/auth/resend-otp') ||
+      url.includes('/auth/verify-otp')
+
+    if (status === 401 && !isLoginRequest) {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      if (window.location.pathname !== '/') {
+        window.location.replace('/')
+      }
+    }
+
+    return Promise.reject(error)
+  }
+)
+
 export function getApiErrorMessage(error, fallback = 'Something went wrong') {
   const data = error?.response?.data
   const candidate = data?.error || data?.message || error?.message
