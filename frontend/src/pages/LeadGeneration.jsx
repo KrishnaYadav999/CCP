@@ -978,8 +978,8 @@ function ConclusionTermsSection({ conclusion, recommendations, onChange }) {
           <div key={row.id} className="grid gap-3 sm:grid-cols-[36px_180px_1fr] sm:items-center">
             <span className="text-center text-lg font-black text-slate-950">{index + 1}.</span>
             <span className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-center font-black text-emerald-800">{row.label}</span>
-            <textarea
-              className="form-input min-h-[54px] resize-y rounded-xl py-4 text-center leading-6"
+            <input
+              className="form-input rounded-xl text-center"
               value={row.value}
               placeholder={row.placeholder}
               onChange={(event) => onChange(row.id, event.target.value)}
@@ -1017,13 +1017,13 @@ function ObservationTable({ title, rows, onUpdate, onUpload, onAdd, onRemove, de
                   <input className="form-input min-h-12 rounded-lg text-center text-sm" value={row.srNo || ''} onChange={(event) => onUpdate(index, 'srNo', event.target.value)} />
                 </td>
                 <td className="border border-slate-200 p-2 align-middle">
-                  <textarea className="form-input min-h-12 resize-y rounded-lg py-0 text-center text-sm font-black leading-[3rem]" value={row.area || ''} onChange={(event) => onUpdate(index, 'area', event.target.value)} />
+                  <input className="form-input min-h-12 rounded-lg text-center text-sm font-black" value={row.area || ''} onChange={(event) => onUpdate(index, 'area', event.target.value)} />
                 </td>
                 <td className="border border-slate-200 p-2 align-middle">
-                  <textarea className="form-input min-h-12 resize-y rounded-lg py-0 text-center text-sm leading-[3rem]" value={row.observation || ''} onChange={(event) => onUpdate(index, 'observation', event.target.value)} />
+                  <input className="form-input min-h-12 rounded-lg text-center text-sm" value={row.observation || ''} onChange={(event) => onUpdate(index, 'observation', event.target.value)} />
                 </td>
                 <td className="border border-slate-200 p-2 align-middle">
-                  <textarea className="form-input min-h-12 resize-y rounded-lg py-0 text-center text-sm leading-[3rem]" value={row.potentialRisk || ''} onChange={(event) => onUpdate(index, 'potentialRisk', event.target.value)} />
+                  <input className="form-input min-h-12 rounded-lg text-center text-sm" value={row.potentialRisk || ''} onChange={(event) => onUpdate(index, 'potentialRisk', event.target.value)} />
                 </td>
                 <td className="border border-slate-200 p-2 align-middle">
                   <div className="grid gap-2">
@@ -1105,7 +1105,7 @@ function ChecklistReviewTable({ rows, onUpdate, defaultOpen = false }) {
                 {items.map((row) => (
                   <tr key={`${row.srNo}-${row.complianceRequirement}`}>
                     <td className="border border-slate-200 p-2 align-middle"><input className="form-input min-h-10 rounded-lg text-center" value={row.srNo || ''} onChange={(event) => onUpdate(row.originalIndex, 'srNo', event.target.value)} /></td>
-                    <td className="border border-slate-200 p-2 align-middle"><textarea className="form-input min-h-[58px] resize-y rounded-lg py-0 text-center font-black leading-[3.35rem]" value={row.complianceRequirement || ''} onChange={(event) => onUpdate(row.originalIndex, 'complianceRequirement', event.target.value)} /></td>
+                    <td className="border border-slate-200 p-2 align-middle"><input className="form-input min-h-10 rounded-lg text-center font-black" value={row.complianceRequirement || ''} onChange={(event) => onUpdate(row.originalIndex, 'complianceRequirement', event.target.value)} /></td>
                     <td className="border border-slate-200 p-2 align-middle">
                       <select className="form-input min-h-10 rounded-lg text-center" value={row.status || ''} onChange={(event) => onUpdate(row.originalIndex, 'status', event.target.value)}>
                         <option value="">Select</option>
@@ -1118,7 +1118,7 @@ function ChecklistReviewTable({ rows, onUpdate, defaultOpen = false }) {
                         <option>Not Applicable</option>
                       </select>
                     </td>
-                    <td className="border border-slate-200 p-2 align-middle"><textarea className="form-input min-h-[58px] resize-y rounded-lg py-0 text-center leading-[3.35rem]" value={row.remark || ''} onChange={(event) => onUpdate(row.originalIndex, 'remark', event.target.value)} /></td>
+                    <td className="border border-slate-200 p-2 align-middle"><input className="form-input min-h-10 rounded-lg text-center" value={row.remark || ''} onChange={(event) => onUpdate(row.originalIndex, 'remark', event.target.value)} /></td>
                   </tr>
                 ))}
               </React.Fragment>
