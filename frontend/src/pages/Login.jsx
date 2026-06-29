@@ -1,12 +1,13 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight, KeyRound, Mail } from 'lucide-react'
+import { ArrowRight, Eye, EyeOff, KeyRound, Mail } from 'lucide-react'
 import AuthLayout from '../components/AuthLayout'
 import api, { getApiErrorMessage } from '../services/api'
 
 export default function Login(){
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const navigate = useNavigate()
@@ -53,16 +54,28 @@ export default function Login(){
         </label>
         <label className="block">
           <span className="text-sm font-black text-slate-700">Password</span>
-          <div className="group mt-2 flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 shadow-sm transition duration-300 focus-within:-translate-y-0.5 focus-within:border-emerald-500 focus-within:bg-white focus-within:shadow-lg focus-within:shadow-emerald-900/10 focus-within:ring-4 focus-within:ring-emerald-100">
-            <KeyRound className="h-5 w-5 text-emerald-600 transition duration-300 group-focus-within:scale-110" />
+          <div className="group relative mt-2 flex items-center gap-3 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 shadow-sm transition duration-300 focus-within:-translate-y-0.5 focus-within:border-emerald-500 focus-within:bg-white focus-within:shadow-xl focus-within:shadow-emerald-900/10 focus-within:ring-4 focus-within:ring-emerald-100">
+            <span className="pointer-events-none absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-emerald-400 to-sky-500 opacity-0 transition duration-300 group-focus-within:opacity-100" />
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100 transition duration-300 group-focus-within:scale-105 group-focus-within:bg-emerald-600 group-focus-within:text-white">
+              <KeyRound className="h-5 w-5" />
+            </span>
             <input
-              type="password"
+              type={showPassword ? 'text' : 'password'}
               placeholder="Enter your password"
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="min-w-0 flex-1 bg-transparent font-semibold outline-none placeholder:text-slate-400"
+              className="min-w-0 flex-1 bg-transparent pr-12 font-semibold outline-none placeholder:text-slate-400"
             />
+            <button
+              type="button"
+              onClick={() => setShowPassword((value) => !value)}
+              className="btn-lift absolute right-2 top-1/2 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-emerald-700 focus:outline-none focus:ring-4 focus:ring-emerald-100"
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              title={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+            </button>
           </div>
         </label>
         {error && <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</p>}
