@@ -903,7 +903,7 @@ function ComplianceHealthReportView({
           rows={report.keyObservations || []}
           defaultOpen
           onUpdate={(index, field, value) => onUpdateRow('keyObservations', index, field, value)}
-          onUpload={handleScreenshotUpload}
+          onUpload={onScreenshotUpload}
           onAdd={() => onAddRow('keyObservations', { srNo: String((report.keyObservations || []).length + 1), area: '', observation: '', potentialRisk: '', screenshotReference: '' })}
           onRemove={(index) => onRemoveRow('keyObservations', index)}
         />
@@ -913,7 +913,7 @@ function ComplianceHealthReportView({
           rows={report.annualReturnObservations || []}
           defaultOpen={false}
           onUpdate={(index, field, value) => onUpdateRow('annualReturnObservations', index, field, value)}
-          onUpload={handleScreenshotUpload}
+          onUpload={onScreenshotUpload}
           onAdd={() => onAddRow('annualReturnObservations', { srNo: String((report.annualReturnObservations || []).length + 1), area: 'Annual Return', observation: '', potentialRisk: '', screenshotReference: '' })}
           onRemove={(index) => onRemoveRow('annualReturnObservations', index)}
         />
