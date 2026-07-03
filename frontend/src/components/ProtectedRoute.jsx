@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import api from '../services/api'
+import { apiService } from '../services/api'
 
 export default function ProtectedRoute({ children }) {
   const [state, setState] = useState({ loading: true, allowed: false })
@@ -12,7 +12,7 @@ export default function ProtectedRoute({ children }) {
       return
     }
 
-    api.get('/auth/me')
+    apiService.auth.getMe()
       .then(() => setState({ loading: false, allowed: true }))
       .catch(() => {
         localStorage.removeItem('token')

@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRight, Eye, EyeOff, KeyRound, Mail } from 'lucide-react'
 import AuthLayout from '../components/AuthLayout'
-import api, { getApiErrorMessage } from '../services/api'
+import { apiService, getApiErrorMessage } from '../services/api'
 
 export default function Login(){
   const [email, setEmail] = useState('')
@@ -17,7 +17,7 @@ export default function Login(){
     setLoading(true)
     setError('')
     try{
-      const res = await api.post('/auth/request-otp', { email, password })
+      const res = await apiService.auth.requestOtp({ email, password })
       localStorage.setItem('login_email', email)
       if (import.meta.env.DEV && res.data?.devOtp) {
         localStorage.setItem('dev_otp', res.data.devOtp)

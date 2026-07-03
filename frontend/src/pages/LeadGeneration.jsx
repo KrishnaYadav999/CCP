@@ -4,7 +4,7 @@ import { ArrowLeft, Building2, CheckCircle2, ChevronDown, ContactRound, Download
 import * as XLSX from 'xlsx';
 import DashboardShell from '../components/dashboard/DashboardShell';
 import ProfileModal from '../components/dashboard/ProfileModal';
-import api, { getApiErrorMessage } from '../services/api';
+import { apiService, getApiErrorMessage } from '../services/api';
 
 const defaultComplianceObservations = [
   { srNo: '1', area: 'Part A General Information', observation: '', potentialRisk: '', screenshotReference: '' },
@@ -244,12 +244,12 @@ export default function LeadGeneration() {
   async function loadPage() {
     setLoading(true);
     try {
-      const meResponse = await api.get('/auth/me');
+      const meResponse = await apiService.auth.getMe();
       setCurrentUser(meResponse.data.user);
-      const leadsResponse = await api.get('/leads');
+      const leadsResponse = await apiService.leads.getList();
       setLeads(leadsResponse.data.leads || []);
       try {
-        const usersResponse = await api.get('/auth/users');
+        const usersResponse = await apiService.auth.getUsers();
         setStaff(usersResponse.data.users || []);
       } catch {
         setStaff([meResponse.data.user]);
@@ -482,7 +482,7 @@ export default function LeadGeneration() {
           workflowStatus: 'draft'
         };
       });
-      const response = await api.post('/leads/bulk', { leads: payload });
+      const response = await apiService.leads.bulkImport(payload);
       const successCount = response.data.imported || 0;
       const failures = response.data.failures || [];
 
@@ -518,8 +518,8 @@ export default function LeadGeneration() {
         complianceHealthReport: reportOverride || lead.complianceHealthReport,
         workflowStatus
       };
-      if (editingLeadId) await api.put(`/leads/${editingLeadId}`, payload);
-      else await api.post('/leads', payload);
+      if (editingLeadId) await apiService.leads.update(editingLeadId, payload);
+      else await apiService.leads.create(payload);
       setNotice(workflowStatus === 'submitted' ? 'Lead submitted successfully.' : 'Lead draft saved successfully.');
       showToast(workflowStatus === 'submitted' ? 'Lead submitted successfully.' : 'Lead draft saved successfully.', 'success');
       if (workflowStatus === 'submitted') setLead(emptyLead);

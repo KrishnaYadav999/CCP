@@ -29,17 +29,17 @@ npm run dev:frontend
 
 CCP Frontend: `http://localhost:8080`  
 CCP Backend API: `http://localhost:8081/api`  
-CRM Frontend allowed origin: `http://localhost:5173`  
-CRM Backend stays on: `http://localhost:5000`  
+CRM Frontend allowed origin: `http://localhost:6173`  
+CRM Backend API: `http://localhost:6000/api`  
 Database: `ccp`
 
 For local frontend development, keep `frontend/.env` as:
 
 ```env
-VITE_API_URL=/api
+VITE_API_URL=http://localhost:8081/api
 ```
 
-Vite proxies `/api` to `http://localhost:8081`, so both local browser navigation and API requests stay on `localhost:8080`.
+This makes local browser API requests go directly to the CCP backend. The Vite proxy for `/api` is still available, but direct backend URLs avoid collisions when another app is also running locally.
 
 ## Vercel Deploy
 

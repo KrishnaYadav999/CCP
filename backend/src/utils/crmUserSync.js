@@ -4,10 +4,13 @@ const https = require('https');
 function getSyncUrl() {
   if (process.env.CRM_USER_SYNC_URL) return process.env.CRM_USER_SYNC_URL;
   if (process.env.CCP_TO_CRM_USER_SYNC_URL) return process.env.CCP_TO_CRM_USER_SYNC_URL;
-  if (process.env.CRM_API_BASE_URL) {
-    return `${process.env.CRM_API_BASE_URL.replace(/\/+$/, '')}/api/auth/ccp/users/sync`;
+  if (process.env.CRM_BACKEND_URL) {
+    return `${process.env.CRM_BACKEND_URL.replace(/\/+$/, '')}/crm/users/sync`;
   }
-  return 'http://localhost:5000/api/auth/ccp/users/sync';
+  if (process.env.CRM_API_BASE_URL) {
+    return `${process.env.CRM_API_BASE_URL.replace(/\/+$/, '')}/crm/users/sync`;
+  }
+  return 'http://localhost:6000/api/crm/users/sync';
 }
 
 function requestJson(url, payload, headers = {}) {
@@ -68,6 +71,7 @@ function buildPayload(action, user, password) {
   const payload = {
     action,
     ccpUserId: String(user._id),
+    crmUserId: user.crmUserId || '',
     name: user.name || '',
     email,
     role: user.role || 'operation',
@@ -96,6 +100,11 @@ async function syncUserToCrm(action, user, options = {}) {
 
   const payload = buildPayload(action, user, options.password);
   const response = await requestJson(url, payload, headers);
+  const crmUserId = response.data?.crmUserId || response.data?.user?.crmUserId || response.data?.user?._id;
+  if (crmUserId && !user.crmUserId) {
+    user.crmUserId = String(crmUserId);
+    await user.save();
+  }
   return { ok: true, statusCode: response.statusCode, data: response.data };
 }
 

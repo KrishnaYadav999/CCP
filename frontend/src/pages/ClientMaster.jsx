@@ -6,7 +6,7 @@ import DashboardShell from '../components/dashboard/DashboardShell';
 import ProfileModal from '../components/dashboard/ProfileModal';
 import { brand } from '../constants/brand';
 import { adminRoles } from '../constants/dashboard';
-import api, { getApiErrorMessage } from '../services/api';
+import { apiService, getApiErrorMessage } from '../services/api';
 
 const tabs = [
   { id: 'basic', label: 'Client Basic Info', icon: Building2 },
@@ -109,11 +109,11 @@ export default function ClientMaster() {
   async function loadPage() {
     setLoading(true);
     try {
-      const meResponse = await api.get('/auth/me');
+      const meResponse = await apiService.auth.getMe();
       setCurrentUser(meResponse.data.user);
       const [leadsResponse, clientsResponse] = await Promise.all([
-        api.get('/leads'),
-        api.get('/clients')
+        apiService.leads.getList(),
+        apiService.clients.getList()
       ]);
       const loadedLeads = leadsResponse.data.leads || [];
       const loadedClients = clientsResponse.data.clients || [];
@@ -121,7 +121,7 @@ export default function ClientMaster() {
       setClients(loadedClients);
       openClientFromQuery(loadedClients);
       try {
-        const usersResponse = await api.get('/auth/users');
+        const usersResponse = await apiService.auth.getUsers();
         setStaff(usersResponse.data.users || []);
       } catch {
         setStaff([meResponse.data.user]);
@@ -395,7 +395,7 @@ export default function ClientMaster() {
           workflowStatus: 'draft'
         };
       });
-      const response = await api.post('/clients/bulk', { clients: payload });
+      const response = await apiService.clients.bulkImport(payload);
       const successCount = response.data.imported || 0;
       const failures = response.data.failures || [];
 
@@ -447,8 +447,8 @@ export default function ClientMaster() {
         data: client,
         workflowStatus
       };
-      if (editingClientId) await api.put(`/clients/${editingClientId}`, payload);
-      else await api.post('/clients', payload);
+      if (editingClientId) await apiService.clients.update(editingClientId, payload);
+      else await apiService.clients.create(payload);
       setNotice(workflowStatus === 'submitted' ? 'Client submitted successfully.' : 'Client draft saved successfully.');
       await loadPage();
       if (workflowStatus === 'submitted') {

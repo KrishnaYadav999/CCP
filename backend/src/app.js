@@ -8,6 +8,7 @@ const clientRoutes = require('./routes/clients');
 const ccpRoutes = require('./routes/ccp');
 const crmRoutes = require('./routes/crm');
 const teamRoutes = require('./routes/teams');
+const notificationRoutes = require('./routes/notifications');
 
 const app = express();
 
@@ -15,7 +16,8 @@ app.use(express.json({ limit: '25mb' }));
 
 const defaultAllowedOrigins = [
   'http://localhost:8080',
-  'http://localhost:5173',
+  'http://localhost:6173',
+  'http://localhost:6000',
   'https://ccp-henna.vercel.app',
   'https://crm-1-eight.vercel.app',
   'https://crm-1-n88d.vercel.app'
@@ -48,7 +50,7 @@ const corsOptions = {
     return callback(error);
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-ccp-api-key', 'x-action-by'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-ccp-api-key', 'x-ccp-secret', 'x-action-by'],
   optionsSuccessStatus: 204
 };
 
@@ -79,6 +81,7 @@ app.use('/api/clients', clientRoutes);
 app.use('/api/ccp', ccpRoutes);
 app.use('/api/crm', crmRoutes);
 app.use('/api/teams', teamRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);

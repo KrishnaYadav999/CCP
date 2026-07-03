@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, CheckCircle2, RefreshCw, ShieldCheck } from 'lucide-react'
 import AuthLayout from '../components/AuthLayout'
-import api, { getApiErrorMessage } from '../services/api'
+import { apiService, getApiErrorMessage } from '../services/api'
 
 export default function VerifyOtp(){
   const [otp, setOtp] = useState('')
@@ -39,7 +39,7 @@ export default function VerifyOtp(){
         setError('Session expired. Please login again.')
         return
       }
-      const res = await api.post('/auth/verify-otp', { email, password, otp })
+      const res = await apiService.auth.verifyOtp({ email, password, otp })
       localStorage.setItem('token', res.data.token)
       localStorage.setItem('user', JSON.stringify(res.data.user))
       navigate('/dashboard')
@@ -58,7 +58,7 @@ export default function VerifyOtp(){
         setError('Session expired. Please login again.')
         return
       }
-      const res = await api.post('/auth/resend-otp', { email, password })
+      const res = await apiService.auth.resendOtp({ email, password })
       if (import.meta.env.DEV && res.data?.devOtp) {
         localStorage.setItem('dev_otp', res.data.devOtp)
         setDevOtp(res.data.devOtp)

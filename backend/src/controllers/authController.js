@@ -239,6 +239,9 @@ exports.createUserByAdmin = async (req, res) => {
     crmSync = await syncUserToCrm('create', user, { password });
   } catch (err) {
     console.error('CRM user create sync failed', err.message);
+    if (err.statusCode === 409) {
+      return res.status(409).json({ error: err.message || 'Email already exists in CRM' });
+    }
     crmSync = { ok: false, error: err.message };
   }
 
@@ -290,6 +293,9 @@ exports.updateUserByAdmin = async (req, res) => {
     crmSync = await syncUserToCrm('update', user);
   } catch (err) {
     console.error('CRM user update sync failed', err.message);
+    if (err.statusCode === 409) {
+      return res.status(409).json({ error: err.message || 'Email already exists in CRM' });
+    }
     crmSync = { ok: false, error: err.message };
   }
 
@@ -319,9 +325,21 @@ exports.updateMe = async (req, res) => {
   req.user.name = name;
   req.user.email = email;
   if (req.body.avatarUrl !== undefined) req.user.avatarUrl = avatarUrl;
+  req.user.ccpUserId = req.user.ccpUserId || String(req.user._id);
   await req.user.save();
 
-  res.json({ ok: true, user: publicUser(req.user) });
+  let crmSync = { ok: true };
+  try {
+    crmSync = await syncUserToCrm('update', req.user);
+  } catch (err) {
+    console.error('CRM profile update sync failed', err.message);
+    if (err.statusCode === 409) {
+      return res.status(409).json({ error: err.message || 'Email already exists in CRM' });
+    }
+    crmSync = { ok: false, error: err.message };
+  }
+
+  res.json({ ok: true, user: publicUser(req.user), crmSync });
 };
 
 exports.updatePassword = async (req, res) => {

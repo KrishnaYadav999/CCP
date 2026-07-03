@@ -20,7 +20,7 @@ import Topbar from '../components/dashboard/Topbar'
 import UserActionsMenu from '../components/dashboard/UserActionsMenu'
 import UserDetailsModal from '../components/dashboard/UserDetailsModal'
 import { adminRoles, defaultUserForm, roleLabels } from '../constants/dashboard'
-import api, { getApiErrorMessage } from '../services/api'
+import { apiService, getApiErrorMessage } from '../services/api'
 
 function formatDateTime(value) {
   if (!value) return 'No login yet'
@@ -73,6 +73,7 @@ export default function AdminDashboard() {
   const [editingUser, setEditingUser] = useState(null)
   const [editForm, setEditForm] = useState(defaultUserForm)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [resyncing, setResyncing] = useState('')
   const navigate = useNavigate()
 
   const canManageUsers = adminRoles.includes(currentUser?.role)
@@ -105,29 +106,52 @@ export default function AdminDashboard() {
   }, [])
 
   useEffect(() => {
+    if (!currentUser) return undefined
+
+    const timer = window.setInterval(() => {
+      refreshDashboardData({ silent: true })
+    }, 15000)
+
+    return () => window.clearInterval(timer)
+  }, [currentUser?._id, currentUser?.id, currentUser?.role])
+
+  useEffect(() => {
     setPage(1)
   }, [query, rowsPerPage, statusFilter])
 
   async function loadDashboard() {
-    setLoading(true)
-    setError('')
+    await refreshDashboardData({ silent: false })
+  }
+
+  async function refreshDashboardData({ silent = false } = {}) {
+    if (!silent) {
+      setLoading(true)
+      setError('')
+    }
 
     try {
-      const meResponse = await api.get('/auth/me')
-      const user = meResponse.data.user
-      setCurrentUser(user)
+      let user = currentUser
+      if (!user) {
+        const meResponse = await apiService.auth.getMe()
+        user = meResponse.data.user
+        setCurrentUser(user)
+      }
 
       const [usersResponse, teamsResponse] = await Promise.all([
-        adminRoles.includes(user.role) ? api.get('/auth/admin/users') : api.get('/auth/users'),
-        api.get('/teams')
+        adminRoles.includes(user.role) ? apiService.auth.getAdminUsers() : apiService.auth.getUsers(),
+        apiService.teams.getList()
       ])
 
       setUsers(usersResponse.data.users || [])
       setTeams(teamsResponse.data.teams || [])
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Unable to load dashboard'))
+      if (!silent) {
+        setError(getApiErrorMessage(err, 'Unable to load dashboard'))
+      } else {
+        console.warn('Silent dashboard refresh failed', err)
+      }
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
@@ -140,7 +164,7 @@ export default function AdminDashboard() {
     const name = `${form.firstName} ${form.lastName}`.trim()
 
     try {
-      const response = await api.post('/auth/admin/create-user', {
+      const response = await apiService.auth.createAdminUser({
         name,
         email: form.email,
         password: form.password,
@@ -177,7 +201,7 @@ export default function AdminDashboard() {
     const id = editingUser._id || editingUser.id
 
     try {
-      const response = await api.put(`/auth/admin/users/${id}`, {
+      const response = await apiService.auth.updateAdminUser(id, {
         name,
         email: editForm.email,
         avatarUrl: editForm.avatarUrl,
@@ -211,17 +235,35 @@ export default function AdminDashboard() {
     setNotice('')
 
     try {
-      const response = await api.post('/teams', teamForm)
+      const response = await apiService.teams.create(teamForm)
       setTeams((prevTeams) => [response.data.team, ...prevTeams])
-      const usersResponse = await api.get('/auth/admin/users')
+      const usersResponse = await apiService.auth.getAdminUsers()
       setUsers(usersResponse.data.users || users)
       setTeamForm({ name: '', description: '', manager: '', operationHead: '', members: [] })
       setTeamModalOpen(false)
-      setNotice('Team created and user mapping updated successfully.')
+      setNotice(response.data.crmSync?.ok === false
+        ? `Team created in CCP, but CRM sync failed: ${response.data.crmSync.error}`
+        : 'Team created and user mapping updated successfully.')
     } catch (err) {
       setError(getApiErrorMessage(err, 'Unable to create team'))
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleResync(type) {
+    setResyncing(type)
+    setError('')
+    setNotice('')
+
+    try {
+      const response = await apiService.crm.resync(type)
+      await loadDashboard()
+      setNotice(`CRM ${type} sync completed. ${response.data.synced || 0} record${response.data.synced === 1 ? '' : 's'} updated.`)
+    } catch (err) {
+      setError(getApiErrorMessage(err, `Unable to sync CRM ${type}`))
+    } finally {
+      setResyncing('')
     }
   }
 
@@ -231,7 +273,7 @@ export default function AdminDashboard() {
     setNotice('')
 
     try {
-      const response = await api.put('/auth/me', profile)
+      const response = await apiService.auth.updateMe(profile)
       const updatedUser = response.data.user
       setCurrentUser(updatedUser)
       setUsers((prevUsers) =>
@@ -251,7 +293,7 @@ export default function AdminDashboard() {
     setNotice('')
 
     try {
-      await api.put('/auth/me/password', passwords)
+      await apiService.auth.updatePassword(passwords)
       setNotice('Password updated successfully.')
     } catch (err) {
       const message = getApiErrorMessage(err, 'Unable to update password')
@@ -372,6 +414,33 @@ export default function AdminDashboard() {
 
                 {canManageUsers && (
                   <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handleResync('users')}
+                      disabled={Boolean(resyncing)}
+                      className="btn-lift inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 font-black text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <RefreshCw className={`h-4 w-4 ${resyncing === 'users' ? 'animate-spin' : ''}`} />
+                      Sync CRM Users
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleResync('teams')}
+                      disabled={Boolean(resyncing)}
+                      className="btn-lift inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 font-black text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <RefreshCw className={`h-4 w-4 ${resyncing === 'teams' ? 'animate-spin' : ''}`} />
+                      Sync CRM Teams
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleResync('notifications')}
+                      disabled={Boolean(resyncing)}
+                      className="btn-lift inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 font-black text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <RefreshCw className={`h-4 w-4 ${resyncing === 'notifications' ? 'animate-spin' : ''}`} />
+                      Sync CRM Notifications
+                    </button>
                     <button
                       type="button"
                       onClick={() => {

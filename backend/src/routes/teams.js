@@ -6,5 +6,6 @@ const asyncHandler = require('../utils/asyncHandler');
 
 router.get('/', requireAuth, asyncHandler(teamCtrl.listTeams));
 router.post('/', requireAuth, asyncHandler(teamCtrl.createTeam));
+router.put('/:id', requireAuth, asyncHandler(teamCtrl.updateTeam));
 
 module.exports = router;
