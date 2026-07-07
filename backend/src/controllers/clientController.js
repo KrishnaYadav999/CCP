@@ -212,7 +212,10 @@ async function forcePersistClientYears(client) {
 
   if (!Object.keys(update.$set).length) delete update.$set;
   if (!Object.keys(update.$unset).length) delete update.$unset;
-  if (Object.keys(update).length) await Client.updateOne({ _id: client._id }, update);
+  if (Object.keys(update).length) {
+    await Client.updateOne({ _id: client._id }, update, { strict: false });
+  }
+  return Client.findById(client._id);
 }
 
 function logClientYearDebug(stage, details = {}) {
@@ -394,7 +397,7 @@ exports.createClient = async (req, res) => {
     return res.status(400).json({ error: 'Client Legal Name is required before submit' });
   }
 
-  const client = await Client.create({
+  let client = await Client.create({
     selectedLead,
     adminControls: ownership.adminControls,
     data,
@@ -404,7 +407,7 @@ exports.createClient = async (req, res) => {
     createdByEmail: ownership.createdByEmail,
     createdByCrmUserId: ownership.createdByCrmUserId
   });
-  await forcePersistClientYears(client);
+  client = await forcePersistClientYears(client) || client;
   logClientYearDebug('create:saved', {
     clientId: client._id,
     selectedLead,
@@ -441,7 +444,7 @@ async function createClientRecord(row, user) {
     throw error;
   }
 
-  const client = await Client.create({
+  let client = await Client.create({
     selectedLead,
     adminControls: ownership.adminControls,
     data,
@@ -451,7 +454,7 @@ async function createClientRecord(row, user) {
     createdByEmail: ownership.createdByEmail,
     createdByCrmUserId: ownership.createdByCrmUserId
   });
-  await forcePersistClientYears(client);
+  client = await forcePersistClientYears(client) || client;
   const pendingApproval = await upsertClientPendingApproval(client, readUserName(user));
   const crmSync = pendingApproval
     ? await syncPendingApprovalToCrm(pendingApproval, { action: 'upsert' })
@@ -505,7 +508,7 @@ exports.updateClient = async (req, res) => {
     return res.status(400).json({ error: 'Client Legal Name is required before submit' });
   }
 
-  const client = await Client.findById(req.params.id);
+  let client = await Client.findById(req.params.id);
   if (!client) return res.status(404).json({ error: 'Client not found' });
   const adminControls = normalizeAdminControls(req.body.adminControls || {}, client.adminControls || {});
   const ownership = await enrichClientOwnership({
@@ -524,7 +527,7 @@ exports.updateClient = async (req, res) => {
   client.createdByEmail = ownership.createdByEmail;
   client.createdByCrmUserId = ownership.createdByCrmUserId;
   await client.save();
-  await forcePersistClientYears(client);
+  client = await forcePersistClientYears(client) || client;
   logClientYearDebug('update:saved', {
     clientId: client._id,
     selectedLead,
