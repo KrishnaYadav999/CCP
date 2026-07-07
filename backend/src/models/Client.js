@@ -6,6 +6,12 @@ function readFirstPresentValue(...values) {
 
 function normalizeClientData(data = {}) {
   const basic = { ...(data.basic || {}) };
+  const onboardingYear = readFirstPresentValue(
+    basic.onboardingYear,
+    basic.clientOnboardingYear,
+    data.onboardingYear,
+    data.clientOnboardingYear
+  );
   const firstAnnualReturnYear = readFirstPresentValue(
     basic.firstAnnualReturnYear,
     basic.firstAnnualReturnYearApplicable,
@@ -21,10 +27,15 @@ function normalizeClientData(data = {}) {
     data.annualReturnYear
   );
 
+  if (onboardingYear !== undefined) {
+    basic.onboardingYear = String(onboardingYear).trim();
+  }
+
   if (firstAnnualReturnYear !== undefined) {
     basic.firstAnnualReturnYear = String(firstAnnualReturnYear).trim();
   }
 
+  delete basic.clientOnboardingYear;
   delete basic.firstAnnualReturnYearApplicable;
   delete basic.firstAnnualReturnYearPplicable;
   delete basic.annualReturnYearApplicable;
@@ -36,6 +47,8 @@ function normalizeClientData(data = {}) {
     basic
   };
 
+  delete normalized.onboardingYear;
+  delete normalized.clientOnboardingYear;
   delete normalized.firstAnnualReturnYear;
   delete normalized.firstAnnualReturnYearApplicable;
   delete normalized.firstAnnualReturnYearPplicable;
@@ -63,6 +76,7 @@ const ClientSchema = new mongoose.Schema({
     remarks: { type: String, trim: true }
   },
   data: { type: mongoose.Schema.Types.Mixed, default: {} },
+  onboardingYear: { type: String, trim: true },
   firstAnnualReturnYear: { type: String, trim: true },
   workflowStatus: { type: String, enum: ['draft', 'submitted'], default: 'draft' },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
@@ -73,6 +87,7 @@ const ClientSchema = new mongoose.Schema({
 
 ClientSchema.pre('validate', function normalizeDataBeforeValidate(next) {
   this.data = normalizeClientData(this.data || {});
+  this.onboardingYear = this.data?.basic?.onboardingYear || undefined;
   this.firstAnnualReturnYear = this.data?.basic?.firstAnnualReturnYear || undefined;
   this.markModified('data');
   next();

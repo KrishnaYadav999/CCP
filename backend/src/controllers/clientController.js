@@ -104,6 +104,12 @@ function readFirstPresentValue(...values) {
 
 function normalizeClientData(data = {}) {
   const basic = { ...(data.basic || {}) };
+  const onboardingYear = readFirstPresentValue(
+    basic.onboardingYear,
+    basic.clientOnboardingYear,
+    data.onboardingYear,
+    data.clientOnboardingYear
+  );
   const firstAnnualReturnYear = readFirstPresentValue(
     basic.firstAnnualReturnYear,
     basic.firstAnnualReturnYearApplicable,
@@ -119,10 +125,15 @@ function normalizeClientData(data = {}) {
     data.annualReturnYear
   );
 
+  if (onboardingYear !== undefined) {
+    basic.onboardingYear = String(onboardingYear).trim();
+  }
+
   if (firstAnnualReturnYear !== undefined) {
     basic.firstAnnualReturnYear = String(firstAnnualReturnYear).trim();
   }
 
+  delete basic.clientOnboardingYear;
   delete basic.firstAnnualReturnYearApplicable;
   delete basic.firstAnnualReturnYearPplicable;
   delete basic.annualReturnYearApplicable;
@@ -134,6 +145,8 @@ function normalizeClientData(data = {}) {
     basic
   };
 
+  delete normalized.onboardingYear;
+  delete normalized.clientOnboardingYear;
   delete normalized.firstAnnualReturnYear;
   delete normalized.firstAnnualReturnYearApplicable;
   delete normalized.firstAnnualReturnYearPplicable;
@@ -142,6 +155,21 @@ function normalizeClientData(data = {}) {
   delete normalized.annualReturnYear;
 
   return normalized;
+}
+
+function logClientYearDebug(stage, details = {}) {
+  const data = details.data || {};
+  const basic = data.basic || {};
+  console.info('[client-years]', {
+    stage,
+    clientId: details.clientId || '',
+    selectedLead: details.selectedLead || '',
+    workflowStatus: details.workflowStatus || '',
+    onboardingYear: basic.onboardingYear || data.onboardingYear || data.clientOnboardingYear || '',
+    firstAnnualReturnYear: basic.firstAnnualReturnYear || data.firstAnnualReturnYear || data.firstAnnualReturnYearApplicable || '',
+    topLevelOnboardingYear: details.onboardingYear || '',
+    topLevelFirstAnnualReturnYear: details.firstAnnualReturnYear || ''
+  });
 }
 
 async function enrichClientOwnership(input = {}, user) {
@@ -221,6 +249,19 @@ async function backfillFirstAnnualReturnYear() {
   }));
 }
 
+async function backfillOnboardingYear() {
+  const clients = await Client.find({
+    'data.basic.onboardingYear': { $exists: true, $nin: [null, ''] }
+  }).select('data onboardingYear');
+
+  await Promise.all(clients.map(async (client) => {
+    const onboardingYear = String(client.data?.basic?.onboardingYear || '').trim();
+    if (!onboardingYear || client.onboardingYear === onboardingYear) return;
+    client.onboardingYear = onboardingYear;
+    await client.save();
+  }));
+}
+
 function normalizeClientOutput(client) {
   const plain = typeof client.toObject === 'function' ? client.toObject() : client;
   const data = plain.data || {};
@@ -267,7 +308,7 @@ function normalizeClientOutput(client) {
 }
 
 exports.listClients = async (req, res) => {
-  await Promise.all([backfillApprovalStatus(), backfillFirstAnnualReturnYear()]);
+  await Promise.all([backfillApprovalStatus(), backfillFirstAnnualReturnYear(), backfillOnboardingYear()]);
   const query = await buildClientVisibilityQuery(req.user);
   const clients = await Client.find(query)
     .populate('selectedLead', 'leadCode company status emails mobileNo1 piboCategory eprCategory addressLine1 addressLine2 addressLine3 state city pinCode contactPerson designation')
@@ -278,6 +319,11 @@ exports.listClients = async (req, res) => {
 
 exports.createClient = async (req, res) => {
   const workflowStatus = req.body.workflowStatus === 'submitted' ? 'submitted' : 'draft';
+  logClientYearDebug('create:received', {
+    selectedLead: req.body.selectedLead,
+    workflowStatus,
+    data: req.body.data || {}
+  });
   let data = normalizeClientData(req.body.data || {});
   const selectedLead = req.body.selectedLead || undefined;
   const adminControls = createDefaultAdminControls(req.body.adminControls || {});
@@ -297,6 +343,14 @@ exports.createClient = async (req, res) => {
     createdByName: ownership.createdByName,
     createdByEmail: ownership.createdByEmail,
     createdByCrmUserId: ownership.createdByCrmUserId
+  });
+  logClientYearDebug('create:saved', {
+    clientId: client._id,
+    selectedLead,
+    workflowStatus: client.workflowStatus,
+    data: client.data || {},
+    onboardingYear: client.onboardingYear,
+    firstAnnualReturnYear: client.firstAnnualReturnYear
   });
   const pendingApproval = await upsertClientPendingApproval(client, readUserName(req.user));
   const crmSync = pendingApproval
@@ -374,6 +428,12 @@ exports.bulkCreateClients = async (req, res) => {
 
 exports.updateClient = async (req, res) => {
   const workflowStatus = req.body.workflowStatus === 'submitted' ? 'submitted' : 'draft';
+  logClientYearDebug('update:received', {
+    clientId: req.params.id,
+    selectedLead: req.body.selectedLead,
+    workflowStatus,
+    data: req.body.data || {}
+  });
   let data = normalizeClientData(req.body.data || {});
   const selectedLead = req.body.selectedLead || undefined;
 
@@ -400,6 +460,14 @@ exports.updateClient = async (req, res) => {
   client.createdByEmail = ownership.createdByEmail;
   client.createdByCrmUserId = ownership.createdByCrmUserId;
   await client.save();
+  logClientYearDebug('update:saved', {
+    clientId: client._id,
+    selectedLead,
+    workflowStatus: client.workflowStatus,
+    data: client.data || {},
+    onboardingYear: client.onboardingYear,
+    firstAnnualReturnYear: client.firstAnnualReturnYear
+  });
   const pendingApproval = await upsertClientPendingApproval(client, readUserName(req.user));
   const crmSync = pendingApproval
     ? await syncPendingApprovalToCrm(pendingApproval, { action: 'upsert' })

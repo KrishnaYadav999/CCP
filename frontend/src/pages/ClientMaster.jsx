@@ -33,7 +33,8 @@ const selectOptions = {
   cities: ['Ahmedabad', 'Surat', 'Mumbai', 'Pune', 'Bengaluru', 'Delhi', 'Jaipur', 'Noida', 'Gurugram', 'Chennai', 'Hyderabad'],
   cpcbStatus: ['Not Started', 'Applied', 'Under Review', 'Approved', 'Rejected'],
   msmeStatus: ['Micro', 'Small', 'Medium', 'Not Applicable'],
-  msmeActivity: ['Manufacturing', 'Service', 'Trading']
+  msmeActivity: ['Manufacturing', 'Service', 'Trading'],
+  ctoCcaType: ['CTO', 'CCA']
 };
 
 const complianceRows = [
@@ -141,10 +142,40 @@ export default function ClientMaster() {
     return normalizeLookup(readIdentityValue(value));
   }
 
-  function hydrateClientForEdit(item, message) {
-    setClient({
+  function readClientFormData(item) {
+    const data = item?.data || {};
+    return {
       ...emptyClient,
-      ...(item.data || {}),
+      ...data,
+      basic: {
+        ...emptyClient.basic,
+        ...(data.basic || {}),
+        onboardingYear: data.basic?.onboardingYear || item?.onboardingYear || '',
+        firstAnnualReturnYear: data.basic?.firstAnnualReturnYear || item?.firstAnnualReturnYear || ''
+      }
+    };
+  }
+
+  function findClientByLead(value, selectedLead) {
+    const leadId = String(value || '').trim();
+    const leadCode = String(selectedLead?.leadCode || '').trim().toLowerCase();
+    return clients.find((item) => {
+      const itemLeadId = String(item.selectedLead?._id || item.selectedLead?.id || item.selectedLead || '').trim();
+      const itemLeadCode = String(item.selectedLead?.leadCode || item.data?.importMeta?.leadNumber || '').trim().toLowerCase();
+      return (leadId && itemLeadId === leadId) || (leadCode && itemLeadCode === leadCode);
+    });
+  }
+
+  function hydrateClientForEdit(item, message) {
+    const formData = readClientFormData(item);
+    console.debug('[ClientMaster] hydrate client', {
+      clientId: item?._id || item?.id,
+      selectedLead: item?.selectedLead?._id || item?.selectedLead?.id || item?.selectedLead || '',
+      onboardingYear: formData.basic.onboardingYear,
+      firstAnnualReturnYear: formData.basic.firstAnnualReturnYear
+    });
+    setClient({
+      ...formData,
       selectedLead: item.selectedLead?._id || item.selectedLead?.id || item.selectedLead || '',
       adminControls: {
         ...emptyClient.adminControls,
@@ -235,6 +266,35 @@ export default function ClientMaster() {
       return;
     }
 
+    const existingClient = findClientByLead(value, selectedLead);
+    if (existingClient) {
+      const formData = readClientFormData(existingClient);
+      console.debug('[ClientMaster] existing client loaded for lead', {
+        clientId: existingClient._id || existingClient.id,
+        leadId: value,
+        leadCode: selectedLead.leadCode,
+        onboardingYear: formData.basic.onboardingYear,
+        firstAnnualReturnYear: formData.basic.firstAnnualReturnYear
+      });
+      setClient((current) => ({
+        ...formData,
+        selectedLead: value,
+        basic: {
+          ...formData.basic,
+          onboardingYear: current.basic?.onboardingYear || formData.basic.onboardingYear || '',
+          firstAnnualReturnYear: current.basic?.firstAnnualReturnYear || formData.basic.firstAnnualReturnYear || ''
+        },
+        adminControls: {
+          ...emptyClient.adminControls,
+          ...(existingClient.adminControls || {}),
+          assignedTo: existingClient.adminControls?.assignedTo?._id || existingClient.adminControls?.assignedTo?.id || existingClient.adminControls?.assignedTo || ''
+        }
+      }));
+      setEditingClientId(existingClient._id || existingClient.id);
+      showToast('Existing client loaded for this lead.');
+      return;
+    }
+
     setClient((current) => ({
       ...current,
       selectedLead: value,
@@ -284,6 +344,7 @@ export default function ClientMaster() {
         email: current.coordinating.email || selectedLead.emails || ''
       }
     }));
+    setEditingClientId('');
   }
 
   function setAdmin(field, value) {
@@ -303,8 +364,24 @@ export default function ClientMaster() {
     showToast(`${nextTab.label} opened.`);
   }
 
+  function validateCteStep() {
+    if (activeTab !== 'cte') return true;
+
+    const plants = client.cte?.plantWiseDetails || [];
+    const invalidPlantIndex = plants.findIndex((plant) => (
+      String(plant.ctoCcaType || '').trim().toUpperCase() === 'CTO' &&
+      ['cteConsentNo', 'cteCategory', 'cteIssuedDate', 'cteValidDate', 'plantLocation'].some((field) => !String(plant[field] || '').trim())
+    ));
+
+    if (invalidPlantIndex === -1) return true;
+    setError(`Plant ${invalidPlantIndex + 1}: CTO is selected. Please fill CTE Consent No., Category, Issued Year, Valid Upto, and Plant Location before moving to the next step.`);
+    setNotice('');
+    return false;
+  }
+
   function goToNextStep() {
     if (isLastStep) return;
+    if (!validateCteStep()) return;
     showToast(`${tabs[activeIndex]?.label || 'Step'} completed.`);
     window.setTimeout(() => {
       setActiveTab(tabs[activeIndex + 1].id);
@@ -441,14 +518,39 @@ export default function ClientMaster() {
     setError('');
     setNotice('');
     try {
+      const normalizedClient = {
+        ...client,
+        basic: {
+          ...client.basic,
+          onboardingYear: String(client.basic?.onboardingYear || '').trim(),
+          firstAnnualReturnYear: String(client.basic?.firstAnnualReturnYear || '').trim()
+        }
+      };
+      const existingClient = !editingClientId && normalizedClient.selectedLead
+        ? findClientByLead(normalizedClient.selectedLead, leads.find((leadItem) => String(leadItem._id || leadItem.id) === String(normalizedClient.selectedLead)))
+        : null;
+      const targetClientId = editingClientId || existingClient?._id || existingClient?.id || '';
       const payload = {
-        selectedLead: client.selectedLead,
-        adminControls: client.adminControls,
-        data: client,
+        selectedLead: normalizedClient.selectedLead,
+        adminControls: normalizedClient.adminControls,
+        data: normalizedClient,
         workflowStatus
       };
-      if (editingClientId) await apiService.clients.update(editingClientId, payload);
-      else await apiService.clients.create(payload);
+      console.debug('[ClientMaster] saving client years', {
+        targetClientId: targetClientId || 'new',
+        selectedLead: payload.selectedLead,
+        onboardingYear: payload.data.basic.onboardingYear,
+        firstAnnualReturnYear: payload.data.basic.firstAnnualReturnYear,
+        workflowStatus
+      });
+      const response = targetClientId
+        ? await apiService.clients.update(targetClientId, payload)
+        : await apiService.clients.create(payload);
+      console.debug('[ClientMaster] saved client years', {
+        clientId: response.data?.client?._id || response.data?.client?.id,
+        onboardingYear: response.data?.client?.data?.basic?.onboardingYear || response.data?.client?.onboardingYear || '',
+        firstAnnualReturnYear: response.data?.client?.data?.basic?.firstAnnualReturnYear || response.data?.client?.firstAnnualReturnYear || ''
+      });
       setNotice(workflowStatus === 'submitted' ? 'Client submitted successfully.' : 'Client draft saved successfully.');
       await loadPage();
       if (workflowStatus === 'submitted') {
@@ -711,7 +813,10 @@ function mapExcelRowToClient(row, staff, leads) {
     creationdate: 'importMeta.creationDate',
     assignedto: 'importMeta.assignedTo',
     clientname: 'basic.clientLegalName',
+    clientonboardingyear: 'basic.onboardingYear',
     onboardingyear: 'basic.onboardingYear',
+    clientfirstannualreturnyearapplicable: 'basic.firstAnnualReturnYear',
+    clientfirstannualreturnyear: 'basic.firstAnnualReturnYear',
     firstannualreturnyearapplicable: 'basic.firstAnnualReturnYear',
     firstannualreturnyearpplicable: 'basic.firstAnnualReturnYear',
     firstannualreturnyear: 'basic.firstAnnualReturnYear',
@@ -940,6 +1045,8 @@ function ClientDirectoryView({ clients, staff, loading, onRefresh, onAddNew, onV
         'Creation Date': data.importMeta?.creationDate || item.createdAt || '',
         'Assigned To': item.adminControls?.assignedTo?.name || data.importMeta?.assignedTo || '',
         'Client Name': data.basic?.clientLegalName || '',
+        'Client Onboarding Year': data.basic?.onboardingYear || '',
+        'First Annual Return Year Applicable': data.basic?.firstAnnualReturnYear || item.firstAnnualReturnYear || '',
         State: data.registeredAddress?.state || '',
         'City with PIN': `${data.registeredAddress?.city || ''} ${data.registeredAddress?.pincode || ''}`.trim(),
         'Contact Person': data.otp?.personName || data.authorised?.name || '',
@@ -1152,6 +1259,7 @@ const emptyPlantConsent = {
   plantLocation: '',
   cteDocument: null,
   cteProductionRows: [],
+  ctoCcaType: '',
   ctoOrderNo: '',
   ctoIssueDate: '',
   ctoValidDate: '',
@@ -1353,7 +1461,7 @@ function CteTab({ client, setValue }) {
   }
 
   return (
-    <Card title="CTE & CTO/CCA Details">
+    <Card title="CTE / CTO / CCA Details">
       <div className="space-y-7">
         <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-5">
           <div className="grid gap-5 lg:grid-cols-[1fr_280px] lg:items-end">
@@ -1404,20 +1512,21 @@ function CteTab({ client, setValue }) {
             />
 
             <ConsentTable
-              title="CTO/CCA Details"
+              title="CTO / CCA Details"
               eyebrow="Consent Operation"
               plants={plants}
               columns={[
-                { key: 'ctoOrderNo', label: 'CTO/CCA Consent Order No.', placeholder: 'Enter order no.' },
-                { key: 'ctoIssueDate', label: 'CTO/CCA Date of Issue', placeholder: 'Select year', options: selectOptions.years },
-                { key: 'ctoValidDate', label: 'CTO/CCA Valid Upto', placeholder: 'Select year', options: selectOptions.years },
-                { key: 'ctoDocument', label: 'CTO/CCA Document Upload', type: 'file' }
+                { key: 'ctoCcaType', label: 'CTO / CCA Type', placeholder: 'Select CTO or CCA', options: selectOptions.ctoCcaType },
+                { key: 'ctoOrderNo', label: 'CTO / CCA Consent Order No.', placeholder: 'Enter order no.' },
+                { key: 'ctoIssueDate', label: 'CTO / CCA Date of Issue', placeholder: 'Select year', options: selectOptions.years },
+                { key: 'ctoValidDate', label: 'CTO / CCA Valid Upto', placeholder: 'Select year', options: selectOptions.years },
+                { key: 'ctoDocument', label: 'CTO / CCA Document Upload', type: 'file' }
               ]}
               onPlantChange={updatePlant}
             />
 
             <PlantQuantityTable
-              title="CTO/CCA Product Quantity"
+              title="CTO / CCA Product Quantity"
               plants={plants}
               quantityKey="ctoProductRows"
               columns={[['productName', 'Name Of The Product'], ['quantity', 'Quantity']]}
