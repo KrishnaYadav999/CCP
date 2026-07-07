@@ -257,14 +257,21 @@ export default function ClientMaster() {
 
   async function patchClientYears(nextBasic) {
     if (!editingClientId) return;
+    const selectedLead = leads.find((leadItem) => String(leadItem._id || leadItem.id) === String(client.selectedLead));
     try {
       const response = await apiService.clients.updateYears(editingClientId, {
         onboardingYear: String(nextBasic.onboardingYear || '').trim(),
-        firstAnnualReturnYear: String(nextBasic.firstAnnualReturnYear || '').trim()
+        firstAnnualReturnYear: String(nextBasic.firstAnnualReturnYear || '').trim(),
+        selectedLead: client.selectedLead,
+        leadNumber: client.importMeta?.leadNumber || selectedLead?.leadCode || '',
+        uniqueId: client.importMeta?.uniqueId || ''
       });
       const saved = response.data?.client;
       console.debug('[ClientMaster] patched client years', {
         clientId: saved?._id || saved?.id || editingClientId,
+        selectedLead: client.selectedLead,
+        leadNumber: client.importMeta?.leadNumber || selectedLead?.leadCode || '',
+        yearPatch: response.data?.yearPatch,
         onboardingYear: saved?.data?.basic?.onboardingYear || saved?.onboardingYear || '',
         firstAnnualReturnYear: saved?.data?.basic?.firstAnnualReturnYear || saved?.firstAnnualReturnYear || ''
       });
@@ -736,7 +743,14 @@ export default function ClientMaster() {
           </div>
 
           <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <button type="button" disabled={saving || isFirstStep} onClick={goToPreviousStep} className="btn-lift min-h-11 rounded-xl border border-slate-200 bg-white px-8 font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Previous</button>
+            <div className="space-y-2">
+              <button type="button" disabled={saving || isFirstStep} onClick={goToPreviousStep} className="btn-lift min-h-11 rounded-xl border border-slate-200 bg-white px-8 font-black text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">Previous</button>
+              {editingClientId && (
+                <p className="text-xs font-bold text-slate-500">
+                  Debug: Client ID {editingClientId} | Lead {client.importMeta?.leadNumber || '-'} | Onboarding {client.basic?.onboardingYear || '-'} | Annual {client.basic?.firstAnnualReturnYear || '-'}
+                </p>
+              )}
+            </div>
             <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
               <button type="button" disabled={saving} onClick={() => saveClient('draft')} className="btn-lift min-h-11 rounded-xl border border-orange-200 bg-white px-8 font-black text-orange-600 hover:bg-orange-50">Save Draft</button>
               {!isLastStep ? (

@@ -229,7 +229,11 @@ function logClientYearDebug(stage, details = {}) {
     onboardingYear: basic.onboardingYear || data.onboardingYear || data.clientOnboardingYear || '',
     firstAnnualReturnYear: basic.firstAnnualReturnYear || data.firstAnnualReturnYear || data.firstAnnualReturnYearApplicable || '',
     topLevelOnboardingYear: details.onboardingYear || '',
-    topLevelFirstAnnualReturnYear: details.firstAnnualReturnYear || ''
+    topLevelFirstAnnualReturnYear: details.firstAnnualReturnYear || '',
+    requestedClientId: details.requestedClientId || '',
+    relatedClientIds: details.relatedClientIds || [],
+    leadNumber: details.leadNumber || '',
+    uniqueId: details.uniqueId || ''
   });
 }
 
@@ -548,6 +552,9 @@ exports.updateClient = async (req, res) => {
 exports.updateClientYears = async (req, res) => {
   const onboardingYear = String(req.body.onboardingYear || '').trim();
   const firstAnnualReturnYear = String(req.body.firstAnnualReturnYear || '').trim();
+  const selectedLead = String(req.body.selectedLead || '').trim();
+  const leadNumber = String(req.body.leadNumber || '').trim();
+  const uniqueId = String(req.body.uniqueId || '').trim();
   const update = { $set: {}, $unset: {} };
 
   if (onboardingYear) {
@@ -571,16 +578,28 @@ exports.updateClientYears = async (req, res) => {
 
   logClientYearDebug('years:patch:received', {
     clientId: req.params.id,
+    selectedLead,
     data: { basic: { onboardingYear, firstAnnualReturnYear } },
     onboardingYear,
     firstAnnualReturnYear
   });
 
-  const client = await Client.findByIdAndUpdate(
-    req.params.id,
-    update,
-    { new: true, strict: false }
-  )
+  const relatedConditions = [{ _id: req.params.id }];
+  if (mongoose.Types.ObjectId.isValid(selectedLead)) relatedConditions.push({ selectedLead });
+  if (leadNumber) relatedConditions.push({ 'data.importMeta.leadNumber': leadNumber });
+  if (uniqueId) relatedConditions.push({ 'data.importMeta.uniqueId': uniqueId });
+
+  const relatedClients = await Client.find({ $or: relatedConditions }).select('_id selectedLead data.importMeta.leadNumber data.importMeta.uniqueId');
+  const relatedIds = relatedClients.map((item) => item._id);
+  if (relatedIds.length) {
+    await Client.updateMany(
+      { _id: { $in: relatedIds } },
+      update,
+      { strict: false }
+    );
+  }
+
+  const client = await Client.findById(req.params.id)
     .populate('selectedLead', 'leadCode company status emails mobileNo1 piboCategory eprCategory addressLine1 addressLine2 addressLine3 state city pinCode contactPerson designation')
     .populate('adminControls.assignedTo', 'name email crmUserId role avatarUrl team teamId managerId operationHeadId');
 
@@ -592,10 +611,26 @@ exports.updateClientYears = async (req, res) => {
     workflowStatus: client.workflowStatus,
     data: client.data || {},
     onboardingYear: client.onboardingYear,
-    firstAnnualReturnYear: client.firstAnnualReturnYear
+    firstAnnualReturnYear: client.firstAnnualReturnYear,
+    relatedClientIds: relatedIds.map((id) => String(id)),
+    requestedClientId: req.params.id,
+    leadNumber,
+    uniqueId
   });
 
-  res.json({ ok: true, client: normalizeClientOutput(client) });
+  res.json({
+    ok: true,
+    client: normalizeClientOutput(client),
+    yearPatch: {
+      requestedClientId: req.params.id,
+      relatedClientIds: relatedIds.map((id) => String(id)),
+      selectedLead,
+      leadNumber,
+      uniqueId,
+      onboardingYear,
+      firstAnnualReturnYear
+    }
+  });
 };
 
 exports.backfillApprovalStatus = backfillApprovalStatus;
