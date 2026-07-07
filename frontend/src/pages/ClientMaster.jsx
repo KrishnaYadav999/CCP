@@ -255,6 +255,37 @@ export default function ClientMaster() {
     setClient((current) => ({ ...current, [section]: { ...current[section], [field]: value } }));
   }
 
+  async function patchClientYears(nextBasic) {
+    if (!editingClientId) return;
+    try {
+      const response = await apiService.clients.updateYears(editingClientId, {
+        onboardingYear: String(nextBasic.onboardingYear || '').trim(),
+        firstAnnualReturnYear: String(nextBasic.firstAnnualReturnYear || '').trim()
+      });
+      const saved = response.data?.client;
+      console.debug('[ClientMaster] patched client years', {
+        clientId: saved?._id || saved?.id || editingClientId,
+        onboardingYear: saved?.data?.basic?.onboardingYear || saved?.onboardingYear || '',
+        firstAnnualReturnYear: saved?.data?.basic?.firstAnnualReturnYear || saved?.firstAnnualReturnYear || ''
+      });
+      setClients((current) => current.map((item) => (
+        String(item._id || item.id) === String(editingClientId) ? saved : item
+      )));
+    } catch (err) {
+      console.error('[ClientMaster] unable to patch client years', err);
+      setError(getApiErrorMessage(err, 'Unable to save client years'));
+      setNotice('');
+    }
+  }
+
+  function setBasicValue(field, value) {
+    const nextBasic = { ...client.basic, [field]: value };
+    setClient((current) => ({ ...current, basic: { ...current.basic, [field]: value } }));
+    if (['onboardingYear', 'firstAnnualReturnYear'].includes(field)) {
+      window.setTimeout(() => patchClientYears(nextBasic), 0);
+    }
+  }
+
   function setRoot(field, value) {
     setClient((current) => ({ ...current, [field]: value }));
   }
@@ -695,7 +726,7 @@ export default function ClientMaster() {
           {notice && <p className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">{notice}</p>}
 
           <div className="mt-6 grid gap-6">
-            {activeTab === 'basic' && <BasicTab client={client} setValue={setValue} />}
+            {activeTab === 'basic' && <BasicTab client={client} setValue={setValue} setBasicValue={setBasicValue} />}
             {activeTab === 'address' && <AddressTab client={client} setValue={setValue} copyRegisteredAddress={copyRegisteredAddress} />}
             {activeTab === 'compliance' && <ComplianceTab client={client} setValue={setValue} addRow={addRow} updateRow={updateRow} removeRow={removeRow} />}
             {activeTab === 'cte' && <CteTab client={client} setValue={setValue} />}
@@ -727,7 +758,7 @@ export default function ClientMaster() {
   );
 }
 
-function BasicTab({ client, setValue }) {
+function BasicTab({ client, setValue, setBasicValue }) {
   return (
     <Card title="Client Basic Info">
       <div className="grid gap-5 md:grid-cols-2">
@@ -735,8 +766,8 @@ function BasicTab({ client, setValue }) {
         <Field label="Trade Name"><input className="form-input" value={client.basic.tradeName} onChange={(event) => setValue('basic', 'tradeName', event.target.value)} /></Field>
         <SelectLike label="PIBO Category" value={client.basic.piboCategory} options={selectOptions.piboCategory} onChange={(value) => setValue('basic', 'piboCategory', value)} />
         <SelectLike label="EPR Category" value={client.basic.eprCategory} options={selectOptions.eprCategory} onChange={(value) => setValue('basic', 'eprCategory', value)} />
-        <SelectLike label="Client Onboarding Year" value={client.basic.onboardingYear} options={selectOptions.years} placeholder="Select onboarding year" onChange={(value) => setValue('basic', 'onboardingYear', value)} />
-        <SelectLike label="First Annual Return Year Applicable" value={client.basic.firstAnnualReturnYear} options={selectOptions.years} placeholder="Select first annual return year" onChange={(value) => setValue('basic', 'firstAnnualReturnYear', value)} />
+        <SelectLike label="Client Onboarding Year" value={client.basic.onboardingYear} options={selectOptions.years} placeholder="Select onboarding year" onChange={(value) => setBasicValue('onboardingYear', value)} />
+        <SelectLike label="First Annual Return Year Applicable" value={client.basic.firstAnnualReturnYear} options={selectOptions.years} placeholder="Select first annual return year" onChange={(value) => setBasicValue('firstAnnualReturnYear', value)} />
       </div>
     </Card>
   );

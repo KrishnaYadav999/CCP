@@ -7,6 +7,7 @@ const asyncHandler = require('../utils/asyncHandler');
 router.get('/', requireAuth, asyncHandler(clientCtrl.listClients));
 router.post('/bulk', requireAuth, asyncHandler(clientCtrl.bulkCreateClients));
 router.post('/', requireAuth, asyncHandler(clientCtrl.createClient));
+router.patch('/:id/years', requireAuth, asyncHandler(clientCtrl.updateClientYears));
 router.put('/:id', requireAuth, asyncHandler(clientCtrl.updateClient));
 
 module.exports = router;

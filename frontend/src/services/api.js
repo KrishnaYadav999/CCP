@@ -80,7 +80,8 @@ export const apiService = {
     getList: () => api.get(apiEndpoints.clients.list),
     bulkImport: (clients) => api.post(apiEndpoints.clients.bulk, { clients }),
     create: (payload) => api.post(apiEndpoints.clients.list, payload),
-    update: (id, payload) => api.put(apiEndpoints.clients.detail(id), payload)
+    update: (id, payload) => api.put(apiEndpoints.clients.detail(id), payload),
+    updateYears: (id, payload) => api.patch(apiEndpoints.clients.years(id), payload)
   },
   teams: {
     getList: () => api.get(apiEndpoints.teams.list),

@@ -19,7 +19,8 @@ const apiEndpoints = {
   clients: {
     list: '/clients',
     bulk: '/clients/bulk',
-    detail: (id) => `/clients/${id}`
+    detail: (id) => `/clients/${id}`,
+    years: (id) => `/clients/${id}/years`
   },
   teams: {
     list: '/teams',

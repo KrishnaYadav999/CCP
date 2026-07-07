@@ -545,6 +545,59 @@ exports.updateClient = async (req, res) => {
   res.json({ ok: true, client: normalizeClientOutput(client), crmSync });
 };
 
+exports.updateClientYears = async (req, res) => {
+  const onboardingYear = String(req.body.onboardingYear || '').trim();
+  const firstAnnualReturnYear = String(req.body.firstAnnualReturnYear || '').trim();
+  const update = { $set: {}, $unset: {} };
+
+  if (onboardingYear) {
+    update.$set.onboardingYear = onboardingYear;
+    update.$set['data.basic.onboardingYear'] = onboardingYear;
+  } else {
+    update.$unset.onboardingYear = '';
+    update.$unset['data.basic.onboardingYear'] = '';
+  }
+
+  if (firstAnnualReturnYear) {
+    update.$set.firstAnnualReturnYear = firstAnnualReturnYear;
+    update.$set['data.basic.firstAnnualReturnYear'] = firstAnnualReturnYear;
+  } else {
+    update.$unset.firstAnnualReturnYear = '';
+    update.$unset['data.basic.firstAnnualReturnYear'] = '';
+  }
+
+  if (!Object.keys(update.$set).length) delete update.$set;
+  if (!Object.keys(update.$unset).length) delete update.$unset;
+
+  logClientYearDebug('years:patch:received', {
+    clientId: req.params.id,
+    data: { basic: { onboardingYear, firstAnnualReturnYear } },
+    onboardingYear,
+    firstAnnualReturnYear
+  });
+
+  const client = await Client.findByIdAndUpdate(
+    req.params.id,
+    update,
+    { new: true, strict: false }
+  )
+    .populate('selectedLead', 'leadCode company status emails mobileNo1 piboCategory eprCategory addressLine1 addressLine2 addressLine3 state city pinCode contactPerson designation')
+    .populate('adminControls.assignedTo', 'name email crmUserId role avatarUrl team teamId managerId operationHeadId');
+
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+
+  logClientYearDebug('years:patch:saved', {
+    clientId: client._id,
+    selectedLead: client.selectedLead?._id || client.selectedLead || '',
+    workflowStatus: client.workflowStatus,
+    data: client.data || {},
+    onboardingYear: client.onboardingYear,
+    firstAnnualReturnYear: client.firstAnnualReturnYear
+  });
+
+  res.json({ ok: true, client: normalizeClientOutput(client) });
+};
+
 exports.backfillApprovalStatus = backfillApprovalStatus;
 exports.normalizeApprovalStatus = normalizeApprovalStatus;
 exports.normalizeClientOutput = normalizeClientOutput;
