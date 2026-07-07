@@ -157,6 +157,64 @@ function normalizeClientData(data = {}) {
   return normalized;
 }
 
+function applyRequestYearsToData(data = {}, body = {}) {
+  const basic = { ...(data.basic || {}) };
+  const onboardingYear = readFirstPresentValue(
+    basic.onboardingYear,
+    body.onboardingYear,
+    body.clientOnboardingYear
+  );
+  const firstAnnualReturnYear = readFirstPresentValue(
+    basic.firstAnnualReturnYear,
+    body.firstAnnualReturnYear,
+    body.firstAnnualReturnYearApplicable,
+    body.annualReturnYearApplicable,
+    body.annualReturnYear
+  );
+
+  if (onboardingYear !== undefined) basic.onboardingYear = String(onboardingYear).trim();
+  if (firstAnnualReturnYear !== undefined) basic.firstAnnualReturnYear = String(firstAnnualReturnYear).trim();
+
+  return {
+    ...data,
+    basic
+  };
+}
+
+async function forcePersistClientYears(client) {
+  const onboardingYear = String(client.data?.basic?.onboardingYear || '').trim();
+  const firstAnnualReturnYear = String(client.data?.basic?.firstAnnualReturnYear || '').trim();
+  const update = { $set: {}, $unset: {} };
+
+  if (onboardingYear) {
+    update.$set.onboardingYear = onboardingYear;
+    update.$set['data.basic.onboardingYear'] = onboardingYear;
+    client.onboardingYear = onboardingYear;
+    client.data.basic.onboardingYear = onboardingYear;
+  } else {
+    update.$unset.onboardingYear = '';
+    update.$unset['data.basic.onboardingYear'] = '';
+    client.onboardingYear = undefined;
+    if (client.data?.basic) delete client.data.basic.onboardingYear;
+  }
+
+  if (firstAnnualReturnYear) {
+    update.$set.firstAnnualReturnYear = firstAnnualReturnYear;
+    update.$set['data.basic.firstAnnualReturnYear'] = firstAnnualReturnYear;
+    client.firstAnnualReturnYear = firstAnnualReturnYear;
+    client.data.basic.firstAnnualReturnYear = firstAnnualReturnYear;
+  } else {
+    update.$unset.firstAnnualReturnYear = '';
+    update.$unset['data.basic.firstAnnualReturnYear'] = '';
+    client.firstAnnualReturnYear = undefined;
+    if (client.data?.basic) delete client.data.basic.firstAnnualReturnYear;
+  }
+
+  if (!Object.keys(update.$set).length) delete update.$set;
+  if (!Object.keys(update.$unset).length) delete update.$unset;
+  if (Object.keys(update).length) await Client.updateOne({ _id: client._id }, update);
+}
+
 function logClientYearDebug(stage, details = {}) {
   const data = details.data || {};
   const basic = data.basic || {};
@@ -322,9 +380,11 @@ exports.createClient = async (req, res) => {
   logClientYearDebug('create:received', {
     selectedLead: req.body.selectedLead,
     workflowStatus,
-    data: req.body.data || {}
+    data: req.body.data || {},
+    onboardingYear: req.body.onboardingYear,
+    firstAnnualReturnYear: req.body.firstAnnualReturnYear
   });
-  let data = normalizeClientData(req.body.data || {});
+  let data = applyRequestYearsToData(normalizeClientData(req.body.data || {}), req.body);
   const selectedLead = req.body.selectedLead || undefined;
   const adminControls = createDefaultAdminControls(req.body.adminControls || {});
   const ownership = await enrichClientOwnership({ adminControls }, req.user);
@@ -344,6 +404,7 @@ exports.createClient = async (req, res) => {
     createdByEmail: ownership.createdByEmail,
     createdByCrmUserId: ownership.createdByCrmUserId
   });
+  await forcePersistClientYears(client);
   logClientYearDebug('create:saved', {
     clientId: client._id,
     selectedLead,
@@ -363,7 +424,7 @@ exports.createClient = async (req, res) => {
 
 async function createClientRecord(row, user) {
   const workflowStatus = row.workflowStatus === 'submitted' ? 'submitted' : 'draft';
-  let data = normalizeClientData(row.data || {});
+  let data = applyRequestYearsToData(normalizeClientData(row.data || {}), row);
   const selectedLead = row.selectedLead || undefined;
   const adminControls = createDefaultAdminControls(row.adminControls || {});
   const ownership = await enrichClientOwnership({
@@ -390,6 +451,7 @@ async function createClientRecord(row, user) {
     createdByEmail: ownership.createdByEmail,
     createdByCrmUserId: ownership.createdByCrmUserId
   });
+  await forcePersistClientYears(client);
   const pendingApproval = await upsertClientPendingApproval(client, readUserName(user));
   const crmSync = pendingApproval
     ? await syncPendingApprovalToCrm(pendingApproval, { action: 'upsert' })
@@ -432,9 +494,11 @@ exports.updateClient = async (req, res) => {
     clientId: req.params.id,
     selectedLead: req.body.selectedLead,
     workflowStatus,
-    data: req.body.data || {}
+    data: req.body.data || {},
+    onboardingYear: req.body.onboardingYear,
+    firstAnnualReturnYear: req.body.firstAnnualReturnYear
   });
-  let data = normalizeClientData(req.body.data || {});
+  let data = applyRequestYearsToData(normalizeClientData(req.body.data || {}), req.body);
   const selectedLead = req.body.selectedLead || undefined;
 
   if (workflowStatus === 'submitted' && !data?.basic?.clientLegalName) {
@@ -460,6 +524,7 @@ exports.updateClient = async (req, res) => {
   client.createdByEmail = ownership.createdByEmail;
   client.createdByCrmUserId = ownership.createdByCrmUserId;
   await client.save();
+  await forcePersistClientYears(client);
   logClientYearDebug('update:saved', {
     clientId: client._id,
     selectedLead,

@@ -280,9 +280,7 @@ export default function ClientMaster() {
         ...formData,
         selectedLead: value,
         basic: {
-          ...formData.basic,
-          onboardingYear: current.basic?.onboardingYear || formData.basic.onboardingYear || '',
-          firstAnnualReturnYear: current.basic?.firstAnnualReturnYear || formData.basic.firstAnnualReturnYear || ''
+          ...formData.basic
         },
         adminControls: {
           ...emptyClient.adminControls,
@@ -534,6 +532,8 @@ export default function ClientMaster() {
         selectedLead: normalizedClient.selectedLead,
         adminControls: normalizedClient.adminControls,
         data: normalizedClient,
+        onboardingYear: normalizedClient.basic.onboardingYear,
+        firstAnnualReturnYear: normalizedClient.basic.firstAnnualReturnYear,
         workflowStatus
       };
       console.debug('[ClientMaster] saving client years', {
