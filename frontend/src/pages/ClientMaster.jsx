@@ -1759,7 +1759,7 @@ function UploadButton({ value, onChange }) {
 
 function Card({ title, children, className = '' }) {
   return (
-    <section className={`overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ${className}`}>
+    <section className={`overflow-visible rounded-2xl border border-slate-200 bg-white shadow-sm ${className}`}>
       <div className="border-b border-slate-100 px-5 py-4">
         <h2 className="text-2xl font-black text-slate-950">{title}</h2>
       </div>
@@ -1770,24 +1770,89 @@ function Card({ title, children, className = '' }) {
 
 function Field({ label, required, children }) {
   return (
-    <label className="block">
+    <div className="block">
       <span className="text-sm font-black text-slate-700">{label} {required && <span className="text-red-500">*</span>}</span>
       <div className="mt-2">{children}</div>
-    </label>
+    </div>
   );
 }
 
 function SelectLike({ label, required, value, options = [], onChange, disabled = false, placeholder = 'Select or type to create new' }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(value || '');
   const normalized = Array.isArray(options) ? options.map((option) => (typeof option === 'string' ? { value: option, label: option } : option)) : [];
-  const listId = `client-${label.replace(/\s+/g, '-')}`;
+  const filtered = normalized.filter((option) => (
+    !draft || String(option.label || option.value).toLowerCase().includes(String(draft).toLowerCase())
+  ));
+  const visibleOptions = filtered.slice(0, 12);
+
+  useEffect(() => {
+    setDraft(value || '');
+  }, [value]);
+
+  function commit(nextValue) {
+    setDraft(nextValue);
+    onChange(nextValue);
+    setOpen(false);
+  }
+
+  function handleInputChange(event) {
+    const nextValue = event.target.value;
+    setDraft(nextValue);
+    onChange(nextValue);
+    setOpen(true);
+  }
+
   return (
     <Field label={label} required={required}>
-      <div className="relative">
-        <input value={value} list={listId} disabled={disabled} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="form-input pr-12 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400" />
-        <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-        <datalist id={listId}>
-          {normalized.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </datalist>
+      <div className="relative z-20">
+        <input
+          value={draft}
+          disabled={disabled}
+          onFocus={() => setOpen(true)}
+          onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+          onChange={handleInputChange}
+          placeholder={placeholder}
+          className="form-input pr-12 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+        />
+        <button
+          type="button"
+          disabled={disabled}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => setOpen((current) => !current)}
+          className="absolute right-3 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-[#30737B] disabled:cursor-not-allowed"
+          title={`Open ${label} options`}
+        >
+          <ChevronDown className={`h-5 w-5 transition ${open ? 'rotate-180' : ''}`} />
+        </button>
+
+        {open && !disabled && (
+          <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-[90] max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-2xl shadow-slate-900/15">
+            {visibleOptions.length ? visibleOptions.map((option) => {
+              const active = String(option.value) === String(value);
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => commit(option.value)}
+                  className={`flex min-h-10 w-full items-center rounded-lg px-3 text-left text-sm font-black transition ${active ? 'bg-[#30737B] text-white' : 'text-slate-700 hover:bg-emerald-50 hover:text-[#30737B]'}`}
+                >
+                  {option.label}
+                </button>
+              );
+            }) : (
+              <button
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => commit(draft)}
+                className="flex min-h-10 w-full items-center rounded-lg px-3 text-left text-sm font-black text-slate-600 hover:bg-emerald-50 hover:text-[#30737B]"
+              >
+                Use "{draft}"
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </Field>
   );
