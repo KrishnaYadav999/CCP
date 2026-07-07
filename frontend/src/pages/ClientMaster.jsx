@@ -1315,7 +1315,7 @@ const emptyPlantConsent = {
 function TableInput({ value, onChange, placeholder = '', type = 'text', options }) {
   if (options) {
     return (
-      <select value={value || ''} onChange={(event) => onChange(event.target.value)} className="form-input min-h-10 min-w-44">
+      <select value={value || ''} onChange={(event) => onChange(event.target.value)} className="form-input min-h-10 w-full min-w-0 text-sm">
         <option value="">{placeholder || 'Select'}</option>
         {options.map((option) => <option key={option} value={option}>{option}</option>)}
       </select>
@@ -1328,14 +1328,14 @@ function TableInput({ value, onChange, placeholder = '', type = 'text', options 
       value={value || ''}
       onChange={(event) => onChange(event.target.value)}
       placeholder={placeholder}
-      className="form-input min-h-10 min-w-44 uppercase"
+      className="form-input min-h-10 w-full min-w-0 text-sm uppercase"
     />
   );
 }
 
 function TableUpload({ value, onChange }) {
   return (
-    <div className="min-w-44">
+    <div className="min-w-0">
       <UploadButton value={value} onChange={onChange} />
     </div>
   );
@@ -1343,30 +1343,30 @@ function TableUpload({ value, onChange }) {
 
 function ConsentTable({ title, eyebrow, plants, columns, onPlantChange }) {
   return (
-    <section>
+    <section className="min-w-0">
       <div className="mb-4">
         <p className="text-xs font-black uppercase tracking-[0.16em] text-[#30737B]">{eyebrow}</p>
         <h3 className="mt-1 text-2xl font-black text-slate-950">{title}</h3>
       </div>
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1100px] text-left text-sm">
+      <div className="max-w-full overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <div className="max-w-full overflow-x-auto">
+          <table className="w-full min-w-[920px] table-fixed text-left text-sm">
             <thead className="bg-slate-950 text-xs font-black uppercase tracking-[0.08em] text-white">
               <tr>
-                <th className="w-20 px-4 py-4 text-center">Sr.No</th>
-                <th className="px-4 py-4">Plant Name</th>
-                {columns.map((column) => <th key={column.key} className="px-4 py-4">{column.label}</th>)}
+                <th className="w-16 px-3 py-4 text-center">Sr.No</th>
+                <th className="w-36 px-3 py-4">Plant Name</th>
+                {columns.map((column) => <th key={column.key} className="px-3 py-4">{column.label}</th>)}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {plants.map((plant, plantIndex) => (
                 <tr key={plantIndex} className="transition hover:bg-orange-50/60">
-                  <td className="px-4 py-3 text-center font-black text-slate-800">{plantIndex + 1}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-3 text-center font-black text-slate-800">{plantIndex + 1}</td>
+                  <td className="px-3 py-3">
                     <TableInput value={plant.plantName} onChange={(value) => onPlantChange(plantIndex, 'plantName', value)} placeholder={`Plant ${plantIndex + 1}`} />
                   </td>
                   {columns.map((column) => (
-                    <td key={column.key} className="px-4 py-3">
+                    <td key={column.key} className="px-3 py-3">
                       {column.type === 'file' ? (
                         <TableUpload value={plant[column.key]} onChange={(value) => onPlantChange(plantIndex, column.key, value)} />
                       ) : (
@@ -1398,7 +1398,7 @@ function PlantQuantityTable({ title, plants, quantityKey, columns, rowTemplate, 
   );
 
   return (
-    <section>
+    <section className="min-w-0">
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <h3 className="text-2xl font-black text-slate-950">{title}</h3>
         <div className="flex flex-col gap-2 sm:flex-row">
@@ -1412,43 +1412,43 @@ function PlantQuantityTable({ title, plants, quantityKey, columns, rowTemplate, 
           </button>
         </div>
       </div>
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] text-left text-sm">
+      <div className="max-w-full overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <div className="max-w-full overflow-x-auto">
+          <table className="w-full min-w-[760px] table-fixed text-left text-sm">
             <thead className="bg-slate-950 text-xs font-black uppercase tracking-[0.08em] text-white">
               <tr>
-                <th className="w-20 px-4 py-4 text-center">Sr.No</th>
+                <th className="w-16 px-3 py-4 text-center">Sr.No</th>
                 {columns.map(([field, label], index) => (
                   <React.Fragment key={field}>
-                    <th className="px-4 py-4">{label}</th>
-                    {index === 0 && <th className="px-4 py-4">Plant Name</th>}
+                    <th className="px-3 py-4">{label}</th>
+                    {index === 0 && <th className="px-3 py-4">Plant Name</th>}
                   </React.Fragment>
                 ))}
-                <th className="w-36 px-4 py-4 text-center">Actions</th>
+                <th className="w-28 px-3 py-4 text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={columns.length + 3} className="px-4 py-12 text-center font-black text-slate-400">No data</td>
+                  <td colSpan={columns.length + 3} className="px-3 py-12 text-center font-black text-slate-400">No data</td>
                 </tr>
               ) : (
                 rows.map(({ plant, plantIndex, row, rowIndex }, index) => (
                   <tr key={`${plantIndex}-${rowIndex}`} className="transition hover:bg-orange-50/60">
-                    <td className="px-4 py-3 text-center font-black text-slate-800">{index + 1}</td>
+                    <td className="px-3 py-3 text-center font-black text-slate-800">{index + 1}</td>
                     {columns.map(([field], columnIndex) => (
                       <React.Fragment key={field}>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-3">
                           <TableInput value={row[field]} onChange={(value) => onUpdateRow(plantIndex, quantityKey, rowIndex, field, value)} />
                         </td>
                         {columnIndex === 0 && (
-                          <td className="px-4 py-3">
+                          <td className="px-3 py-3">
                             <TableInput value={plant.plantName} onChange={(value) => onPlantNameChange(plantIndex, value)} placeholder={`Plant ${plantIndex + 1}`} />
                           </td>
                         )}
                       </React.Fragment>
                     ))}
-                    <td className="px-4 py-3 text-center">
+                    <td className="px-3 py-3 text-center">
                       <button type="button" onClick={() => onRemoveRow(plantIndex, quantityKey, rowIndex)} className="rounded-lg border border-red-200 px-3 py-2 font-black text-red-600 hover:bg-red-50">
                         Remove
                       </button>
@@ -1507,7 +1507,7 @@ function CteTab({ client, setValue }) {
 
   return (
     <Card title="CTE / CTO / CCA Details">
-      <div className="space-y-7">
+      <div className="min-w-0 space-y-7">
         <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-5">
           <div className="grid gap-5 lg:grid-cols-[1fr_280px] lg:items-end">
             <div>
@@ -1742,7 +1742,7 @@ function UploadButton({ value, onChange }) {
   return (
     <div className="grid gap-2">
       <div className="flex flex-wrap gap-2">
-        <label className="btn-lift inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 font-black text-slate-700 hover:bg-slate-50">
+        <label className="btn-lift inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 hover:bg-slate-50">
           <Upload className="h-4 w-4" /> Upload
           <input type="file" className="sr-only" onChange={handleFile} />
         </label>
