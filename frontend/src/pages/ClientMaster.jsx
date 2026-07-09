@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Building2, CheckCircle2, ChevronDown, Download, Eye, FileCheck2, FileText, FolderCheck, MapPin, Pencil, Plus, RefreshCw, Search, ShieldCheck, Upload, UserRound, X } from 'lucide-react';
+import { ArrowLeft, Building2, CheckCircle2, ChevronDown, Download, Eye, FileCheck2, FileSpreadsheet, FileText, FolderCheck, MapPin, Pencil, Plus, RefreshCw, Search, ShieldCheck, UserRound, X } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import DashboardShell from '../components/dashboard/DashboardShell';
 import ProfileModal from '../components/dashboard/ProfileModal';
@@ -142,6 +142,10 @@ export default function ClientMaster() {
     return normalizeLookup(readIdentityValue(value));
   }
 
+  function normalizeLeadLookup(value) {
+    return normalizeLookup(readLeadNumberValue(value));
+  }
+
   function readClientFormData(item) {
     const data = item?.data || {};
     return {
@@ -158,12 +162,33 @@ export default function ClientMaster() {
 
   function findClientByLead(value, selectedLead) {
     const leadId = String(value || '').trim();
-    const leadCode = String(selectedLead?.leadCode || '').trim().toLowerCase();
+    const leadCode = normalizeLeadLookup(selectedLead?.leadCode);
     return clients.find((item) => {
       const itemLeadId = String(item.selectedLead?._id || item.selectedLead?.id || item.selectedLead || '').trim();
-      const itemLeadCode = String(item.selectedLead?.leadCode || item.data?.importMeta?.leadNumber || '').trim().toLowerCase();
+      const itemLeadCode = normalizeLeadLookup(item.selectedLead?.leadCode || item.data?.importMeta?.leadNumber || item.clientIdentity?.leadNumber);
       return (leadId && itemLeadId === leadId) || (leadCode && itemLeadCode === leadCode);
     });
+  }
+
+  function findLeadByNumber(value) {
+    const leadCode = normalizeLeadLookup(value);
+    if (!leadCode) return null;
+    return leads.find((leadItem) => normalizeLeadLookup(leadItem.leadCode) === leadCode) || null;
+  }
+
+  function findClientByLeadNumber(value) {
+    const leadCode = normalizeLeadLookup(value);
+    if (!leadCode) return null;
+    return clients.find((item) => {
+      const data = readClientData(item);
+      return [
+        item.selectedLead?.leadCode,
+        data.importMeta?.leadNumber,
+        item.clientIdentity?.leadNumber,
+        data.importMeta?.uniqueId,
+        item.clientIdentity?.uniqueId
+      ].some((candidate) => normalizeLeadLookup(candidate) === leadCode);
+    }) || null;
   }
 
   function hydrateClientForEdit(item, message) {
@@ -438,10 +463,10 @@ export default function ClientMaster() {
   }
 
   function resolveLeadId(value) {
-    const raw = String(value || '').trim().toLowerCase();
+    const raw = normalizeLeadLookup(value);
     if (!raw) return '';
-    const match = leads.find((leadItem) => String(leadItem.leadCode || '').toLowerCase() === raw) ||
-      leads.find((leadItem) => String(leadItem.company || '').toLowerCase() === raw);
+    const match = leads.find((leadItem) => normalizeLeadLookup(leadItem.leadCode) === raw) ||
+      leads.find((leadItem) => normalizeLookup(leadItem.company) === normalizeLookup(value));
     return match ? (match._id || match.id) : '';
   }
 
@@ -477,7 +502,18 @@ export default function ClientMaster() {
       const first = parsed[0];
       setClient({
         ...emptyClient,
-        ...(first.data || {}),
+        basic: { ...emptyClient.basic, ...(first.data?.basic || {}) },
+        registeredAddress: { ...emptyClient.registeredAddress, ...(first.data?.registeredAddress || {}) },
+        communicationAddress: { ...emptyClient.communicationAddress, ...(first.data?.communicationAddress || {}) },
+        compliance: { ...emptyClient.compliance, ...(first.data?.compliance || {}) },
+        msmeRows: first.data?.msmeRows || emptyClient.msmeRows,
+        cte: { ...emptyClient.cte, ...(first.data?.cte || {}) },
+        cpcb: { ...emptyClient.cpcb, ...(first.data?.cpcb || {}) },
+        validation: { ...emptyClient.validation, ...(first.data?.validation || {}) },
+        otp: { ...emptyClient.otp, ...(first.data?.otp || {}) },
+        authorised: { ...emptyClient.authorised, ...(first.data?.authorised || {}) },
+        coordinating: { ...emptyClient.coordinating, ...(first.data?.coordinating || {}) },
+        importMeta: { ...(first.data?.importMeta || {}) },
         selectedLead: first.selectedLead || '',
         adminControls: { ...emptyClient.adminControls, ...(first.adminControls || {}) }
       });
@@ -488,26 +524,38 @@ export default function ClientMaster() {
     }
   }
 
-  async function importExcelRows() {
+  function buildExcelImportPayload() {
+    return excelRows.map((row) => {
+      const assignedText = row.data?.importMeta?.assignedTo || '';
+      const leadText = readLeadNumberValue(row.data?.importMeta?.leadNumber || row.data?.importMeta?.uniqueId || '');
+      const lead = findLeadByNumber(leadText);
+      return {
+        ...row,
+        selectedLead: row.selectedLead || lead?._id || lead?.id || resolveLeadId(leadText),
+        data: {
+          ...(row.data || {}),
+          importMeta: {
+            ...(row.data?.importMeta || {}),
+            leadNumber: leadText || row.data?.importMeta?.leadNumber || ''
+          }
+        },
+        adminControls: {
+          ...row.adminControls,
+          assignedTo: row.adminControls?.assignedTo || resolveUserId(assignedText)
+        },
+        workflowStatus: 'draft'
+      };
+    });
+  }
+
+  async function importClientDraftRows() {
     if (!excelRows.length) return;
     setImporting(true);
     setError('');
     setNotice('');
 
     try {
-      const payload = excelRows.map((row) => {
-        const assignedText = row.data?.importMeta?.assignedTo || '';
-        const leadText = row.data?.importMeta?.leadNumber || row.data?.importMeta?.uniqueId || '';
-        return {
-          ...row,
-          selectedLead: row.selectedLead || resolveLeadId(leadText),
-          adminControls: {
-            ...row.adminControls,
-            assignedTo: row.adminControls?.assignedTo || resolveUserId(assignedText)
-          },
-          workflowStatus: 'draft'
-        };
-      });
+      const payload = buildExcelImportPayload();
       const response = await apiService.clients.bulkImport(payload);
       const successCount = response.data.imported || 0;
       const failures = response.data.failures || [];
@@ -517,12 +565,67 @@ export default function ClientMaster() {
         await loadPage();
       }
       if (failures.length) {
-        setError(`${failures.length} row${failures.length === 1 ? '' : 's'} failed. First: row ${failures[0].row + 1} (${failures[0].error})`);
+        setError(`${failures.length} row${failures.length === 1 ? '' : 's'} failed. First: row ${failures[0].row} (${failures[0].error})`);
       }
     } catch (err) {
       const failures = err?.response?.data?.failures || [];
       setError(failures.length
-        ? `${failures.length} row${failures.length === 1 ? '' : 's'} failed. First: row ${failures[0].row + 1} (${failures[0].error})`
+        ? `${failures.length} row${failures.length === 1 ? '' : 's'} failed. First: row ${failures[0].row} (${failures[0].error})`
+        : getApiErrorMessage(err, 'Unable to import clients'));
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function importAnnualReturnRows() {
+    if (!excelRows.length) return;
+    setImporting(true);
+    setError('');
+    setNotice('');
+
+    try {
+      const payload = buildExcelImportPayload();
+      const failures = [];
+      let patchedCount = 0;
+
+      for (let index = 0; index < payload.length; index += 1) {
+        const row = payload[index];
+        const leadNumber = row.data?.importMeta?.leadNumber || '';
+        const existingClient = findClientByLeadNumber(leadNumber) || (row.selectedLead ? findClientByLead(row.selectedLead, findLeadByNumber(leadNumber)) : null);
+        const onboardingYear = String(row.data?.basic?.onboardingYear || '').trim();
+        const firstAnnualReturnYear = String(row.data?.basic?.firstAnnualReturnYear || '').trim();
+
+        if (!existingClient) {
+          failures.push({ row: index + 1, error: `No existing client found for lead ${leadNumber || 'blank'}` });
+          continue;
+        }
+
+        try {
+          const existingData = readClientData(existingClient);
+          await apiService.clients.updateYears(existingClient._id || existingClient.id, {
+            onboardingYear: onboardingYear || existingData.basic?.onboardingYear || existingClient.onboardingYear || '',
+            firstAnnualReturnYear: firstAnnualReturnYear || existingData.basic?.firstAnnualReturnYear || existingClient.firstAnnualReturnYear || '',
+            selectedLead: existingClient.selectedLead?._id || existingClient.selectedLead?.id || existingClient.selectedLead || row.selectedLead || '',
+            leadNumber,
+            uniqueId: row.data?.importMeta?.uniqueId || existingData.importMeta?.uniqueId || ''
+          });
+          patchedCount += 1;
+        } catch (err) {
+          failures.push({ row: index + 1, error: getApiErrorMessage(err, 'Unable to update annual return years') });
+        }
+      }
+
+      if (patchedCount) {
+        setNotice(`Annual Return Excel imported: ${patchedCount} client${patchedCount === 1 ? '' : 's'} updated.`);
+        await loadPage();
+      }
+      if (failures.length) {
+        setError(`${failures.length} row${failures.length === 1 ? '' : 's'} failed. First: row ${failures[0].row} (${failures[0].error})`);
+      }
+    } catch (err) {
+      const failures = err?.response?.data?.failures || [];
+      setError(failures.length
+        ? `${failures.length} row${failures.length === 1 ? '' : 's'} failed. First: row ${failures[0].row} (${failures[0].error})`
         : getApiErrorMessage(err, 'Unable to import clients'));
     } finally {
       setImporting(false);
@@ -679,29 +782,42 @@ export default function ClientMaster() {
 
           <Card title="Excel Bulk Import" className="mt-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div className="min-w-0">
-                <p className="text-sm font-black text-slate-950">Client Master Generator Import</p>
-                <p className="mt-1 text-xs font-bold text-slate-500">
-                  Upload .xlsx with headers like Unique ID, Trade Name, Client Name, State, City with PIN, GST Number, CPCB Reg No, OTP Mobile.
-                </p>
-                {excelFileName && (
-                  <p className="mt-2 text-xs font-black text-slate-700">
-                    File: <span className="font-extrabold">{excelFileName}</span> {excelRows.length ? `(${excelRows.length} row${excelRows.length === 1 ? '' : 's'})` : ''}
+              <div className="flex min-w-0 gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
+                  <FileSpreadsheet className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-black text-slate-950">Client Master & Annual Return Import</p>
+                  <p className="mt-1 text-xs font-bold text-slate-500">
+                    Upload full Client Master Excel, or use Lead Number with Client Onboarding Year and First Annual Return Year Applicable for Annual Return update.
                   </p>
-                )}
+                  {excelFileName && (
+                    <p className="mt-2 text-xs font-black text-slate-700">
+                      File: <span className="font-extrabold">{excelFileName}</span> {excelRows.length ? `(${excelRows.length} row${excelRows.length === 1 ? '' : 's'})` : ''}
+                    </p>
+                  )}
+                </div>
               </div>
               <div className="flex flex-wrap gap-3">
                 <label className="btn-lift inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 font-black text-slate-800 hover:bg-slate-50">
-                  <Upload className="h-4 w-4" /> Upload Excel
+                  <FileSpreadsheet className="h-4 w-4" /> Upload Excel
                   <input type="file" accept=".xlsx,.xls" onChange={handleExcelUpload} className="sr-only" />
                 </label>
                 <button
                   type="button"
                   disabled={!excelRows.length || importing || saving}
-                  onClick={importExcelRows}
+                  onClick={importClientDraftRows}
                   className="btn-lift min-h-11 rounded-xl bg-gradient-to-r from-emerald-700 to-teal-700 px-6 font-black text-white shadow-lg shadow-emerald-700/20 disabled:cursor-not-allowed disabled:opacity-70"
                 >
-                  {importing ? 'Importing...' : 'Import Drafts'}
+                  {importing ? 'Importing...' : 'Import Client Drafts'}
+                </button>
+                <button
+                  type="button"
+                  disabled={!excelRows.length || importing || saving}
+                  onClick={importAnnualReturnRows}
+                  className="btn-lift min-h-11 rounded-xl border border-emerald-200 bg-white px-6 font-black text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {importing ? 'Importing...' : 'Import Annual Return'}
                 </button>
               </div>
             </div>
@@ -776,12 +892,12 @@ function BasicTab({ client, setValue, setBasicValue }) {
   return (
     <Card title="Client Basic Info">
       <div className="grid gap-5 md:grid-cols-2">
-        <Field required label="Client Legal Name"><input className="form-input" value={client.basic.clientLegalName} onChange={(event) => setValue('basic', 'clientLegalName', event.target.value)} /></Field>
-        <Field label="Trade Name"><input className="form-input" value={client.basic.tradeName} onChange={(event) => setValue('basic', 'tradeName', event.target.value)} /></Field>
-        <SelectLike label="PIBO Category" value={client.basic.piboCategory} options={selectOptions.piboCategory} onChange={(value) => setValue('basic', 'piboCategory', value)} />
-        <SelectLike label="EPR Category" value={client.basic.eprCategory} options={selectOptions.eprCategory} onChange={(value) => setValue('basic', 'eprCategory', value)} />
-        <SelectLike label="Client Onboarding Year" value={client.basic.onboardingYear} options={selectOptions.years} placeholder="Select onboarding year" onChange={(value) => setBasicValue('onboardingYear', value)} />
-        <SelectLike label="First Annual Return Year Applicable" value={client.basic.firstAnnualReturnYear} options={selectOptions.years} placeholder="Select first annual return year" onChange={(value) => setBasicValue('firstAnnualReturnYear', value)} />
+        <Field required label="Client Legal Name"><input className="form-input" value={client.basic.clientLegalName || ''} onChange={(event) => setValue('basic', 'clientLegalName', event.target.value)} /></Field>
+        <Field label="Trade Name"><input className="form-input" value={client.basic.tradeName || ''} onChange={(event) => setValue('basic', 'tradeName', event.target.value)} /></Field>
+        <SelectLike label="PIBO Category" value={client.basic.piboCategory || ''} options={selectOptions.piboCategory} onChange={(value) => setValue('basic', 'piboCategory', value)} />
+        <SelectLike label="EPR Category" value={client.basic.eprCategory || ''} options={selectOptions.eprCategory} onChange={(value) => setValue('basic', 'eprCategory', value)} />
+        <SelectLike label="Client Onboarding Year" value={client.basic.onboardingYear || ''} options={selectOptions.years} placeholder="Select onboarding year" onChange={(value) => setBasicValue('onboardingYear', value)} />
+        <SelectLike label="First Annual Return Year Applicable" value={client.basic.firstAnnualReturnYear || ''} options={selectOptions.years} placeholder="Select first annual return year" onChange={(value) => setBasicValue('firstAnnualReturnYear', value)} />
       </div>
     </Card>
   );
@@ -797,6 +913,11 @@ function readIdentityValue(value) {
   const raw = String(value || '').trim();
   if (invalidIdentityValues.has(raw.toLowerCase())) return '';
   return raw;
+}
+
+function readLeadNumberValue(value) {
+  const raw = readIdentityValue(value);
+  return raw.replace(/^lead\s*number\s*:\s*/i, '').trim();
 }
 
 function getClientUniqueId(item) {
@@ -819,7 +940,9 @@ function formatExcelValue(value, field) {
   if (value === null || value === undefined) return '';
   if (value instanceof Date) return value.toISOString().slice(0, 10);
   if (typeof value === 'number' && /date/i.test(field)) return XLSX.SSF.format('yyyy-mm-dd', value);
-  return typeof value === 'string' ? value.trim() : value;
+  const clean = typeof value === 'string' ? value.trim() : value;
+  if (/year/i.test(field) && /^select\b.*year/i.test(String(clean || ''))) return '';
+  return clean;
 }
 
 function splitCityPin(value) {
@@ -848,6 +971,7 @@ function normalizeApproval(value) {
 function mapExcelRowToClient(row, staff, leads) {
   const mapping = {
     uniqueid: 'importMeta.uniqueId',
+    companyuniqueid: 'importMeta.leadNumber',
     tradename: 'basic.tradeName',
     leadnote: 'importMeta.leadNote',
     leadnumber: 'importMeta.leadNumber',
@@ -1003,7 +1127,8 @@ function mapExcelRowToClient(row, staff, leads) {
   if (assignedMatch) payload.adminControls.assignedTo = assignedMatch._id || assignedMatch.id;
 
   const leadRaw = payload.data.importMeta.leadNumber || payload.data.importMeta.uniqueId || '';
-  const leadMatch = leads.find((leadItem) => String(leadItem.leadCode || '').toLowerCase() === String(leadRaw).toLowerCase());
+  const leadKey = String(readLeadNumberValue(leadRaw)).toLowerCase();
+  const leadMatch = leads.find((leadItem) => String(readLeadNumberValue(leadItem.leadCode)).toLowerCase() === leadKey);
   if (leadMatch) payload.selectedLead = leadMatch._id || leadMatch.id;
 
   return payload;
