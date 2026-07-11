@@ -16,7 +16,7 @@ export default function Sidebar({ collapsed, onToggleCollapsed, onClose }) {
   }
 
   return (
-    <div className="relative flex h-full min-h-screen flex-col overflow-visible bg-[#246d73] text-white">
+    <div className="relative flex h-full min-h-screen flex-col overflow-visible bg-[#0f684f] text-white">
       <div className={`border-b border-white/10 px-4 py-5 ${collapsed ? 'flex justify-center' : 'flex items-center justify-between'}`}>
         <div className={`flex min-w-0 items-center gap-3 ${collapsed ? 'justify-center' : ''}`}>
           <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl border border-white/20 bg-white p-2 shadow-lg shadow-slate-950/10">
@@ -40,22 +40,22 @@ export default function Sidebar({ collapsed, onToggleCollapsed, onClose }) {
       <button
         type="button"
         onClick={onToggleCollapsed}
-        className="btn-lift absolute -right-5 top-8 z-50 hidden h-10 w-10 items-center justify-center rounded-full border border-teal-100 bg-white text-[#246d73] shadow-lg shadow-slate-950/20 transition hover:bg-emerald-50 lg:inline-flex"
+        className="btn-lift absolute -right-5 top-8 z-50 hidden h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-[#095944] text-white shadow-lg shadow-slate-950/20 transition hover:bg-[#084d3c] lg:inline-flex"
         aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
       >
         <ChevronsLeft className={`h-5 w-5 transition-transform duration-300 ${collapsed ? 'rotate-180' : ''}`} />
       </button>
 
-      <nav className={`flex-1 px-3 py-5 ${collapsed ? 'px-2' : 'px-4'}`}>
+      <nav className={`flex-1 py-5 ${collapsed ? 'px-2' : 'px-4'}`}>
         {navSections.map((section) => (
-          <div key={section.label}>
+          <div key={section.label} className="mb-7 last:mb-0">
             {!collapsed && (
-              <p className="mb-3 px-3 text-xs font-black uppercase tracking-[0.2em] text-white/45">
+              <p className="mb-4 px-1 text-xs font-black uppercase tracking-[0.22em] text-[#89cbb8]">
                 {section.label}
               </p>
             )}
-            <div className="space-y-2.5">
+            <div className="space-y-1.5">
               {section.items.map((item) => {
                 const Icon = item.icon
                 const isActive = item.path === location.pathname
@@ -64,18 +64,17 @@ export default function Sidebar({ collapsed, onToggleCollapsed, onClose }) {
                     type="button"
                     key={item.label}
                     onClick={() => openItem(item)}
-                    className={`group relative flex min-h-14 w-full items-center rounded-xl text-left font-black transition-all duration-200 ${
-                      collapsed ? 'justify-center px-0' : 'gap-3 px-3'
+                    className={`group relative flex min-h-12 w-full items-center rounded-2xl text-left font-black transition-all duration-200 ${
+                      collapsed ? 'justify-center px-0' : 'gap-2 px-3'
                     } ${
                       isActive
-                        ? 'bg-white text-[#246d73] shadow-xl shadow-slate-950/15'
-                        : 'text-white/78 hover:bg-white/10 hover:text-white'
+                        ? 'bg-[#ff5108] text-white shadow-lg shadow-slate-950/15'
+                        : 'text-white/90 hover:bg-[#347f6b] hover:text-white'
                     }`}
                     title={collapsed ? item.label : undefined}
                   >
-                    {isActive && !collapsed && <span className="absolute left-0 top-3 h-8 w-1 rounded-r-full bg-orange-500" />}
                     <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg transition ${
-                      isActive ? 'bg-teal-50 text-[#246d73]' : 'bg-white/10 text-white/85 group-hover:bg-white/15 group-hover:text-white'
+                      isActive ? 'text-white' : 'text-white/90 group-hover:text-white'
                     }`}>
                       <Icon className="h-5 w-5" />
                     </span>
