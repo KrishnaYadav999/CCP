@@ -5,6 +5,7 @@ import VerifyOtp from './pages/VerifyOtp'
 import AdminDashboard from './pages/AdminDashboard'
 import LeadGeneration from './pages/LeadGeneration'
 import ClientMaster from './pages/ClientMaster'
+import CreateQuotation from './pages/CreateQuotation'
 import ProtectedRoute from './components/ProtectedRoute'
 import { brand } from './constants/brand'
 
@@ -26,6 +27,7 @@ function App(){
         <Route path="/sales/lead-generation" element={<ProtectedRoute><LeadGeneration/></ProtectedRoute>} />
         <Route path="/sales/client-master" element={<ProtectedRoute><ClientMaster/></ProtectedRoute>} />
         <Route path="/client-master" element={<ProtectedRoute><ClientMaster/></ProtectedRoute>} />
+        <Route path="/sales/quotations/new" element={<ProtectedRoute><CreateQuotation/></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>

@@ -1,12 +1,8 @@
-import {
-  ClipboardList,
-  UserRound,
-  Users
-} from 'lucide-react'
+import { ClipboardList, FilePlus2, Home, UserRound, Users } from 'lucide-react'
 
-export const roles = ['operation', 'admin', 'superadmin', 'manager', 'compliance', 'sales']
+export const roles = ['operation', 'admin', 'superadmin', 'manager', 'compliance', 'sales', 'accounts']
 export const adminRoles = ['admin', 'superadmin']
-export const defaultTeams = ['No team assigned', 'Operations', 'Compliance', 'Sales', 'Client Success', 'Management']
+export const defaultTeams = ['No team assigned', 'Operations', 'Compliance', 'Sales', 'Accounts', 'Client Success', 'Management']
 
 export const roleLabels = {
   operation: 'Operation',
@@ -14,7 +10,8 @@ export const roleLabels = {
   superadmin: 'Super Admin',
   manager: 'Manager',
   compliance: 'Compliance',
-  sales: 'Sales'
+  sales: 'Sales',
+  accounts: 'Accounts'
 }
 
 export const defaultUserForm = {
@@ -33,11 +30,18 @@ export const defaultUserForm = {
 
 export const navSections = [
   {
-    label: 'CCP',
+    label: 'Navigation',
     items: [
-      { label: 'Lead Generator', icon: ClipboardList, path: '/sales/lead-generation' },
-      { label: 'Client Master Generator', icon: UserRound, path: '/sales/client-master' },
-      { label: 'Admin User Master', icon: Users, path: '/dashboard' }
+      {
+        label: 'Home',
+        icon: Home,
+        children: [
+          { label: 'Lead Generator', icon: ClipboardList, path: '/sales/lead-generation' },
+          { label: 'Client Master Generator', icon: UserRound, path: '/sales/client-master' },
+          { label: 'Add New Quotation', icon: FilePlus2, path: '/sales/quotations/new' },
+          { label: 'Admin User Master', icon: Users, path: '/dashboard' }
+        ]
+      }
     ]
   }
 ]

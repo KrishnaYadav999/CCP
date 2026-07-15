@@ -22,6 +22,10 @@ const apiEndpoints = {
     detail: (id) => `/clients/${id}`,
     years: (id) => `/clients/${id}/years`
   },
+  quotations: {
+    list: '/quotations',
+    bulk: '/quotations/bulk'
+  },
   teams: {
     list: '/teams',
     create: '/teams'

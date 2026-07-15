@@ -4,6 +4,7 @@ const connectDB = require('../config/db');
 const Lead = require('../models/Lead');
 const Client = require('../models/Client');
 const PendingApproval = require('../models/PendingApproval');
+const Quotation = require('../models/Quotation');
 const { backfillApprovalStatus, normalizeApprovalStatus, normalizeClientOutput } = require('../controllers/clientController');
 const { updateClientPendingApproval } = require('../utils/pendingApproval');
 const { sanitizeClientPayloadForCrm, syncPendingApprovalToCrm } = require('../utils/crmPendingApprovalSync');
@@ -18,12 +19,14 @@ function isPublicReadEndpoint(req) {
 }
 
 function requireSharedKey(req, res, next) {
-  const expectedKey = process.env.CCP_SHARED_API_KEY;
-  if (!expectedKey) return next();
+  const expectedKey = process.env.CCP_API_KEY || process.env.CCP_SHARED_API_KEY || process.env.CCP_SHARED_SECRET;
+  if (!expectedKey) {
+    return res.status(503).json({ ok: false, error: 'CCP integration credential is not configured' });
+  }
 
-  const providedKey = req.get('x-ccp-api-key') || req.query.apiKey;
+  const providedKey = req.get('x-ccp-api-key') || req.get('x-ccp-secret');
   if (providedKey !== expectedKey) {
-    return res.status(401).json({ error: 'Invalid CCP API key' });
+    return res.status(401).json({ ok: false, error: 'Invalid CCP integration credential' });
   }
 
   return next();
@@ -166,6 +169,74 @@ router.get('/clients', (req, res) => runPublicRead(
   },
   normalizeClientForCrm
 ));
+
+router.get('/quotations', async (req, res) => {
+  try {
+    await connectDB();
+    const [stored, legacyClients] = await Promise.all([
+      Quotation.find({})
+        .populate('selectedLead', 'leadCode company contactPerson designation mobileNo1 mobileNo2 emails')
+        .sort({ updatedAt: -1 })
+        .lean(),
+      Client.find({ $or: [{ 'data.quotation': { $exists: true } }, { 'data.quotations.0': { $exists: true } }] })
+        .populate('selectedLead', 'leadCode company contactPerson designation mobileNo1 mobileNo2 emails')
+        .select('selectedLead data.quotation data.quotations createdAt updatedAt')
+        .lean()
+    ]);
+
+    const records = new Map();
+    stored.forEach((quotation) => {
+      const leadId = String(quotation.selectedLead?._id || quotation.selectedLead || '');
+      records.set(`${leadId}::${String(quotation.quotationNumber || '').toLowerCase()}`, quotation);
+    });
+    legacyClients.forEach((client) => {
+      const lead = client.selectedLead || {};
+      const leadId = String(lead._id || lead || '');
+      const quotations = Array.isArray(client.data?.quotations) && client.data.quotations.length
+        ? client.data.quotations
+        : client.data?.quotation ? [client.data.quotation] : [];
+      quotations.forEach((quotation, index) => {
+        const quotationNumber = String(quotation.quotationNumber || `LEGACY-${client._id}-${index + 1}`);
+        const key = `${leadId}::${quotationNumber.toLowerCase()}`;
+        if (records.has(key)) return;
+        records.set(key, {
+          _id: `legacy-${client._id}-${index + 1}`,
+          selectedLead: lead,
+          companyName: lead.company || client.data?.basic?.clientLegalName || '',
+          quotationNumber,
+          quotationDate: quotation.quotationDate || '',
+          validUntil: quotation.validUntil || '',
+          items: quotation.items || [],
+          terms: quotation.terms || [],
+          subtotal: Number(quotation.subtotal || 0),
+          grandTotal: Number(quotation.grandTotal || quotation.subtotal || 0),
+          status: 'submitted',
+          source: 'bulk',
+          createdAt: client.createdAt,
+          updatedAt: client.updatedAt,
+          legacy: true
+        });
+      });
+    });
+
+    const quotations = [...records.values()].sort((left, right) => new Date(right.updatedAt || 0) - new Date(left.updatedAt || 0));
+    console.info('[CCP integration]', {
+      path: req.originalUrl.split('?')[0],
+      status: 200,
+      database: process.env.DB_NAME || 'ccp',
+      quotations: quotations.length
+    });
+    return res.json({ ok: true, source: 'ccp', total: quotations.length, quotations });
+  } catch (err) {
+    console.error('[CCP integration]', {
+      path: req.originalUrl.split('?')[0],
+      status: 500,
+      database: process.env.DB_NAME || 'ccp',
+      error: err?.name || 'DatabaseError'
+    });
+    return res.status(500).json({ ok: false, error: 'Unable to fetch CCP quotations' });
+  }
+});
 
 router.get('/pending-approvals', asyncHandler(async (req, res) => {
   const status = req.query.status

@@ -9,6 +9,7 @@ const ccpRoutes = require('./routes/ccp');
 const crmRoutes = require('./routes/crm');
 const teamRoutes = require('./routes/teams');
 const notificationRoutes = require('./routes/notifications');
+const quotationRoutes = require('./routes/quotations');
 
 const app = express();
 
@@ -82,6 +83,7 @@ app.use('/api/ccp', ccpRoutes);
 app.use('/api/crm', crmRoutes);
 app.use('/api/teams', teamRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/quotations', quotationRoutes);
 
 app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);

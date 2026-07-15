@@ -83,6 +83,11 @@ export const apiService = {
     update: (id, payload) => api.put(apiEndpoints.clients.detail(id), payload),
     updateYears: (id, payload) => api.patch(apiEndpoints.clients.years(id), payload)
   },
+  quotations: {
+    getList: () => api.get(apiEndpoints.quotations.list),
+    save: (payload) => api.post(apiEndpoints.quotations.list, payload),
+    bulkUpsert: (quotations) => api.post(apiEndpoints.quotations.bulk, { quotations })
+  },
   teams: {
     getList: () => api.get(apiEndpoints.teams.list),
     create: (payload) => api.post(apiEndpoints.teams.create, payload)
