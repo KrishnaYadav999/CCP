@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://ccp-9drj.vercel.app/api/$1"
+      "destination": "https://ccp-62b2.onrender.com/api/$1"
     },
     {
       "source": "/(.*)",

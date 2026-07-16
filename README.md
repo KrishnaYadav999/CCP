@@ -46,12 +46,12 @@ This makes local browser API requests go directly to the CCP backend. The Vite p
 This project is split into two Vercel apps:
 
 - Frontend: `https://ccp-henna.vercel.app`
-- Backend API: `https://ccp-9drj.vercel.app/api`
+- Backend API: `https://ccp-62b2.onrender.com/api`
 
 Frontend production API calls are configured in `frontend/vercel.json` to rewrite `/api/*` to the backend app. In Vercel Environment Variables, also set:
 
 ```env
-VITE_API_URL=https://ccp-9drj.vercel.app/api
+VITE_API_URL=https://ccp-62b2.onrender.com/api
 ```
 
 On the backend Vercel app, set:
