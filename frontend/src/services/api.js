@@ -2,9 +2,10 @@ import axios from 'axios'
 import apiEndpoints from './apiEndpoints'
 
 const defaultBaseURL = import.meta.env.DEV ? 'http://localhost:8081/api' : '/api'
+const resolvedBaseURL = import.meta.env.PROD ? '/api' : (import.meta.env.VITE_API_URL || defaultBaseURL)
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || defaultBaseURL,
+  baseURL: resolvedBaseURL,
   headers: {
     'Content-Type': 'application/json'
   }
