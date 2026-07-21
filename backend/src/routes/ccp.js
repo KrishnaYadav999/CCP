@@ -11,34 +11,27 @@ const { sanitizeClientPayloadForCrm, syncPendingApprovalToCrm } = require('../ut
 const { requireOptionalAuth } = require('../middleware/auth');
 const { buildLeadVisibilityQuery, buildClientVisibilityQuery } = require('../utils/visibilityScope');
 const asyncHandler = require('../utils/asyncHandler');
+const ccpLeadController = require('../controllers/ccpLeadController');
+const clientController = require('../controllers/clientController');
+const requireCcpSharedKey = require('../middleware/ccpSharedKey');
 
 const router = express.Router();
 
 function isPublicReadEndpoint(req) {
-  return req.method === 'GET' && ['/leads', '/clients'].includes(req.path);
+  return req.method === 'GET' && req.path === '/clients';
 }
 
-function requireSharedKey(req, res, next) {
-  const expectedKey = process.env.CCP_API_KEY || process.env.CCP_SHARED_API_KEY || process.env.CCP_SHARED_SECRET;
-  if (!expectedKey) {
-    return res.status(503).json({ ok: false, error: 'CCP integration credential is not configured' });
-  }
-
-  const providedKey = req.get('x-ccp-api-key') || req.get('x-ccp-secret');
-  if (providedKey !== expectedKey) {
-    return res.status(401).json({ ok: false, error: 'Invalid CCP integration credential' });
-  }
-
-  return next();
+function isDirectLeadEndpoint(req) {
+  return req.path === '/leads' || req.path === '/leads/bulk' || req.path.startsWith('/leads/');
 }
 
 router.use((req, res, next) => {
-  if (isPublicReadEndpoint(req)) return next();
-  return requireSharedKey(req, res, next);
+  if (isPublicReadEndpoint(req) || isDirectLeadEndpoint(req)) return next();
+  return requireCcpSharedKey(req, res, next);
 });
 
 router.use((req, res, next) => {
-  if (isPublicReadEndpoint(req)) return next();
+  if (isPublicReadEndpoint(req) || isDirectLeadEndpoint(req)) return next();
   return requireOptionalAuth(req, res, next);
 });
 
@@ -146,15 +139,10 @@ router.get('/health', (req, res) => {
   res.json({ ok: true, app: 'CCP', database: process.env.DB_NAME || 'ccp' });
 });
 
-router.get('/leads', (req, res) => runPublicRead(
-  res,
-  'leads',
-  () => Lead.find({})
-    .populate('assignedTo', 'name email crmUserId avatarUrl role team teamId managerId operationHeadId')
-    .sort({ leadCode: 1, createdAt: 1 })
-    .lean(),
-  normalizeLeadForCrm
-));
+router.get('/leads', ccpLeadController.requireSecret, requireOptionalAuth, asyncHandler(ccpLeadController.list));
+router.post('/leads', ccpLeadController.requireSecret, requireOptionalAuth, asyncHandler(ccpLeadController.create));
+router.post('/leads/bulk', ccpLeadController.requireSecret, requireOptionalAuth, asyncHandler(ccpLeadController.bulkCreate));
+router.put('/leads/:id', ccpLeadController.requireSecret, requireOptionalAuth, asyncHandler(ccpLeadController.update));
 
 router.get('/clients', (req, res) => runPublicRead(
   res,
@@ -162,7 +150,12 @@ router.get('/clients', (req, res) => runPublicRead(
   async () => {
     await backfillApprovalStatus();
     return Client.find({})
-      .populate('selectedLead', 'leadCode company status emails mobileNo1 piboCategory eprCategory addressLine1 addressLine2 addressLine3 state city pinCode contactPerson designation')
+      .populate('createdBy', 'name email')
+      .populate({
+        path: 'selectedLead',
+        select: 'leadCode company status emails mobileNo1 piboCategory eprCategory addressLine1 addressLine2 addressLine3 state city pinCode contactPerson designation importedCreatedBy createdByEmail createdBy',
+        populate: { path: 'createdBy', select: 'name email' }
+      })
       .populate('adminControls.assignedTo', 'name email crmUserId role avatarUrl team teamId managerId operationHeadId')
       .sort({ createdAt: -1 })
       .lean();
@@ -170,17 +163,34 @@ router.get('/clients', (req, res) => runPublicRead(
   normalizeClientForCrm
 ));
 
+// CRM-originated Client Master records are written only to CCP. The router-level
+// shared-key guard protects these service-to-service endpoints; a CCP user JWT is
+// optional so CRM imports can preserve their own creator identity fields.
+router.post('/clients', asyncHandler(clientController.createClient));
+router.post('/clients/bulk', asyncHandler(clientController.bulkCreateClients));
+router.post('/clients/years/bulk', asyncHandler(clientController.bulkUpdateClientYears));
+router.put('/clients/:id', asyncHandler(clientController.updateClient));
+
 router.get('/quotations', async (req, res) => {
   try {
     await connectDB();
     const [stored, legacyClients] = await Promise.all([
       Quotation.find({})
-        .populate('selectedLead', 'leadCode company contactPerson designation mobileNo1 mobileNo2 emails')
+        .populate('createdBy', 'name email')
+        .populate({
+          path: 'selectedLead',
+          select: 'leadCode sourceLeadId company contactPerson designation mobileNo1 mobileNo2 emails importedCreatedBy createdByEmail assignedToText createdBy',
+          populate: { path: 'createdBy', select: 'name email' }
+        })
         .sort({ updatedAt: -1 })
         .lean(),
       Client.find({ $or: [{ 'data.quotation': { $exists: true } }, { 'data.quotations.0': { $exists: true } }] })
-        .populate('selectedLead', 'leadCode company contactPerson designation mobileNo1 mobileNo2 emails')
-        .select('selectedLead data.quotation data.quotations createdAt updatedAt')
+        .populate({
+          path: 'selectedLead',
+          select: 'leadCode sourceLeadId company contactPerson designation mobileNo1 mobileNo2 emails importedCreatedBy createdByEmail assignedToText createdBy',
+          populate: { path: 'createdBy', select: 'name email' }
+        })
+        .select('selectedLead data.quotation data.quotations createdByName createdByEmail createdAt updatedAt')
         .lean()
     ]);
 
@@ -212,6 +222,7 @@ router.get('/quotations', async (req, res) => {
           grandTotal: Number(quotation.grandTotal || quotation.subtotal || 0),
           status: 'submitted',
           source: 'bulk',
+          createdByName: client.createdByName || lead.importedCreatedBy || lead.createdBy?.name || lead.createdByEmail || '',
           createdAt: client.createdAt,
           updatedAt: client.updatedAt,
           legacy: true

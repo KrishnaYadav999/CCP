@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Building2, CheckCircle2, ChevronDown, ContactRound, Download, Eye, MapPin, Pencil, Plus, RefreshCw, Search, TrendingUp, Upload, UserCheck, UserPlus, UsersRound, X } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import DashboardShell from '../components/dashboard/DashboardShell';
+import CrmConnectButton from '../components/dashboard/CrmConnectButton';
 import ProfileModal from '../components/dashboard/ProfileModal';
 import { apiService, getApiErrorMessage } from '../services/api';
 
@@ -80,6 +81,7 @@ const emptyLead = {
   company: '',
   industryType: '',
   eprCategory: '',
+  piboParent: '',
   piboCategory: '',
   servicesOffered: '',
   addressLine1: '',
@@ -89,6 +91,7 @@ const emptyLead = {
   state: '',
   city: '',
   pinCode: '',
+  gstNumber: '',
   existingClient: 'No',
   website: '',
   salutation: '',
@@ -105,7 +108,7 @@ const emptyLead = {
   notes: '',
   assignedTo: '',
   assignedToText: '',
-  assignedBy: '',
+  closedBy: '',
   importedCreatedBy: '',
   leadDate: '',
   nextFollowUpDate: '',
@@ -128,7 +131,12 @@ const options = {
   status: ['Potential - Interested', 'Potential - Not Interested', 'Need Assistance', 'Lost', 'Existing Client'],
   industryType: ["Automotive", "Chemicals", "Construction", "Consumer Goods", "E-commerce" , "Electronics" , "Energy" , "FMCG","Financial Services" , "Healthcare" , "Hospitality", "IT & Software" , "Logistics" , "Manufacturing","Pharmaceuticals", "Renewables", "Retail", "Telecom", "Waste Management", "Other" , "Food Manufacturing" , "Mechinical Industry" ,"Petrochemical", "Packaging Manufacture" , "Plastic Recycling" , "E-Waste Recycler" , "E-Waste Recycling"],
   eprCategory:  ["EPR - Plastic Waste", "EPR - E-Waste", "EPR - Battery Waste", "EPR - Paper Waste", "EPR - Water Waste", "EPR - C&D Waste", "EPR - Tyre Waste" , "EPR - Used Oil Waste" , "EPR - End of Life Vehicles" , "EPR - Non Ferrous"],
-  piboCategory: ["Producer", "Importer", "Brand Owner", "Recycler" , "SIMP (legacy)","SIMP – Producer (Small & Micro)","SIMP – Importer of Raw Material", "SIMP – Manufacturer of Raw Material","SIMP – Seller","PWP","Refurbisher","IMPO"],
+  piboParent: ['PIBO', 'SIMP', 'PWP'],
+  piboCategory: {
+    PIBO: ['Producer', 'Brand Owner', 'Importer'],
+    SIMP: ['Producer (Small & Micro)', 'Importer of Raw Material', 'Manufacturer of Raw Material', 'Seller'],
+    PWP: ['Recycler', 'Waste to Energy', 'Waste to Oil', 'Cement Co-processing']
+  },
   servicesOffered:["EPR - Plastic Compliance", "Monthly Patraka", "ISO Certification", "N/A" , "CTE-CTO/CCA" , "EPR - E-Waste Compliance", "EPR - Battery Waste Compliance" , "C & D WASTE CONSULTANCY" , "EPR DIGITAL CREDIT" , "EPR - Used Oil Compliance" , "EPR - Waster Waste Compliance" , "EPR ETP Portal handling" , "Registration for Compositable Plastic"],
   states: [
   "Andhra Pradesh",
@@ -195,6 +203,7 @@ export default function LeadGeneration() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [staff, setStaff] = useState([]);
   const [leads, setLeads] = useState([]);
+  const [nextLeadCode, setNextLeadCode] = useState('ATPL-0001');
   const [lead, setLead] = useState(emptyLead);
   const [editingLeadId, setEditingLeadId] = useState('');
   const [viewLead, setViewLead] = useState(null);
@@ -214,23 +223,16 @@ export default function LeadGeneration() {
   const [reportReviewed, setReportReviewed] = useState(false);
   const navigate = useNavigate();
 
-  const isFirstStepReady = Boolean(lead.status && lead.company && lead.piboCategory && lead.servicesOffered);
+  const isFirstStepReady = Boolean(lead.status && lead.company && lead.piboParent && lead.piboCategory && lead.servicesOffered);
   const activeIndex = tabs.findIndex((tab) => tab.id === activeTab);
 
   const staffOptions = useMemo(() => staff.map((user) => ({
     value: user._id || user.id,
-    label: `${user.name || user.email} (${user.team || 'Team'})`
+    label: user.name || user.email,
+    secondary: `${user.team || 'No team'} · ${user.role || 'User'}`,
+    search: `${user.name || ''} ${user.email || ''} ${user.team || ''} ${user.role || ''}`.toLowerCase()
   })), [staff]);
   const cityOptions = lead.state ? stateCities[lead.state] || [] : [];
-  const nextLeadCode = useMemo(() => {
-    const latestNumber = leads.reduce((highest, item) => {
-      const code = String(item.leadCode || '').replace('ATPL-LEAD-', '');
-      const number = Number.parseInt(code, 10) || 0;
-      return Math.max(highest, number);
-    }, 0);
-    return `ATPL-LEAD-${String(latestNumber + 1).padStart(4, '0')}`;
-  }, [leads]);
-
   useEffect(() => {
     loadPage();
   }, []);
@@ -248,6 +250,7 @@ export default function LeadGeneration() {
       setCurrentUser(meResponse.data.user);
       const leadsResponse = await apiService.leads.getList();
       setLeads(leadsResponse.data.leads || []);
+      setNextLeadCode(leadsResponse.data.nextLeadCode || 'ATPL-0001');
       try {
         const usersResponse = await apiService.auth.getUsers();
         setStaff(usersResponse.data.users || []);
@@ -485,6 +488,7 @@ export default function LeadGeneration() {
       const response = await apiService.leads.bulkImport(payload);
       const successCount = response.data.imported || 0;
       const failures = response.data.failures || [];
+      const warnings = response.data.warnings || [];
 
       if (successCount) {
         setNotice(`${successCount} lead${successCount === 1 ? '' : 's'} imported as drafts.`);
@@ -492,14 +496,16 @@ export default function LeadGeneration() {
         await loadPage();
       }
       if (failures.length) {
-        const message = `${failures.length} row${failures.length === 1 ? '' : 's'} failed. First: row ${failures[0].row + 1} (${failures[0].error})`;
+        const message = `${failures.length} row${failures.length === 1 ? '' : 's'} failed. First: row ${failures[0].row} (${failures[0].error})`;
         setError(message);
         showToast(message, 'error');
+      } else if (warnings.length) {
+        showToast(`${warnings.length} import warning${warnings.length === 1 ? '' : 's'}. First: row ${warnings[0].row} (${warnings[0].warning})`, 'warning');
       }
     } catch (err) {
       const failures = err?.response?.data?.failures || [];
       const message = failures.length
-        ? `${failures.length} row${failures.length === 1 ? '' : 's'} failed. First: row ${failures[0].row + 1} (${failures[0].error})`
+        ? `${failures.length} row${failures.length === 1 ? '' : 's'} failed. First: row ${failures[0].row} (${failures[0].error})`
         : getApiErrorMessage(err, 'Unable to import leads');
       setError(message);
       showToast(message, 'error');
@@ -596,7 +602,12 @@ export default function LeadGeneration() {
           }}
           onView={setViewLead}
           onEdit={(item) => {
-            setLead({ ...emptyLead, ...item, assignedTo: item.assignedTo?._id || item.assignedTo?.id || item.assignedTo || '' });
+            setLead({
+              ...emptyLead,
+              ...item,
+              assignedTo: item.assignedTo?._id || item.assignedTo?.id || resolveUserId(item.assignedTo?.name || item.assignedToText) || '',
+              closedBy: item.closedBy?._id || item.closedBy?.id || resolveUserId(item.closedBy?.name || item.closedByText) || ''
+            });
             setEditingLeadId(item._id || item.id);
             setActiveTab('basic');
             setViewMode('form');
@@ -680,9 +691,12 @@ export default function LeadGeneration() {
                 <h1 className="mt-1 text-3xl font-black text-slate-950">Lead Generator</h1>
               </div>
             </div>
-            <div className="rounded-2xl border border-emerald-100 bg-white px-4 py-3 shadow-sm">
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Step {activeIndex + 1} of {tabs.length}</p>
-              <p className="mt-1 font-black text-emerald-700">{isFirstStepReady ? 'Workflow unlocked' : 'Complete first step'}</p>
+            <div className="flex flex-wrap items-center gap-3">
+              <CrmConnectButton />
+              <div className="rounded-2xl border border-emerald-100 bg-white px-4 py-3 shadow-sm">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Step {activeIndex + 1} of {tabs.length}</p>
+                <p className="mt-1 font-black text-emerald-700">{isFirstStepReady ? 'Workflow unlocked' : 'Complete first step'}</p>
+              </div>
             </div>
           </div>
 
@@ -764,7 +778,8 @@ export default function LeadGeneration() {
                   <Field required label="Company"><input className="form-input" value={lead.company} onChange={(event) => updateField('company', event.target.value)} /></Field>
                   <SelectLike label="Industry Type" value={lead.industryType} options={options.industryType} onChange={(value) => updateField('industryType', value)} />
                   <SelectLike label="EPR Category" value={lead.eprCategory} options={options.eprCategory} onChange={(value) => updateField('eprCategory', value)} />
-                  <SelectLike required label="PIBO Category" value={lead.piboCategory} options={options.piboCategory} onChange={(value) => updateField('piboCategory', value)} />
+                  <SelectLike required label="Applicant Type" value={lead.piboParent} options={options.piboParent} placeholder="Select PIBO, SIMP or PWP" onChange={(value) => setLead((current) => ({ ...current, piboParent: value, piboCategory: '' }))} />
+                  {lead.piboParent && <SelectLike required label={`${lead.piboParent} Category`} value={lead.piboCategory} options={options.piboCategory[lead.piboParent] || []} placeholder={`Select ${lead.piboParent} category`} onChange={(value) => updateField('piboCategory', value)} />}
                   <SelectLike required label="Services Offered" value={lead.servicesOffered} options={options.servicesOffered} onChange={(value) => updateField('servicesOffered', value)} />
                 </LeadSection>
               </div>
@@ -779,6 +794,16 @@ export default function LeadGeneration() {
                 <SelectLike required label="State" value={lead.state} options={options.states} onChange={(value) => updateField('state', value)} />
                 <SelectLike required label="City" value={lead.city} options={cityOptions} disabled={!lead.state} placeholder={lead.state ? 'Select or type to create new' : 'Select state first'} onChange={(value) => updateField('city', value)} />
                 <Field required label="PIN Code"><input className="form-input" value={lead.pinCode} onChange={(event) => updateField('pinCode', event.target.value)} /></Field>
+                <Field label="GST Number">
+                  <input
+                    className="form-input uppercase"
+                    placeholder="Enter 15-character GST number"
+                    maxLength={15}
+                    value={lead.gstNumber}
+                    onChange={(event) => updateField('gstNumber', event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                  />
+                  <span className="mt-1 block text-right text-xs font-bold text-slate-400">{lead.gstNumber.length}/15</span>
+                </Field>
                 <Field label="Existing Client?"><select className="form-input" value={lead.existingClient} onChange={(event) => updateField('existingClient', event.target.value)}><option>No</option><option>Yes</option></select></Field>
                 <Field label="Website"><input className="form-input" placeholder="https://example.com" value={lead.website} onChange={(event) => updateField('website', event.target.value)} /></Field>
               </LeadSection>
@@ -826,12 +851,8 @@ export default function LeadGeneration() {
 
             {activeTab === 'assign' && (
               <LeadSection title="Assign Lead" columns="grid-cols-1">
-                <SelectLike label="Assign To Staff" value={lead.assignedTo} options={staffOptions} onChange={(value) => updateField('assignedTo', value)} />
-                <Field label="Assigned To Text"><input className="form-input" value={lead.assignedToText} onChange={(event) => updateField('assignedToText', event.target.value)} /></Field>
-                <Field label="Assigned By"><input className="form-input" value={lead.assignedBy} onChange={(event) => updateField('assignedBy', event.target.value)} /></Field>
-                <Field label="Created By"><input className="form-input" value={lead.importedCreatedBy} onChange={(event) => updateField('importedCreatedBy', event.target.value)} /></Field>
-                <Field label="Created At"><input className="form-input" value={lead.importedCreatedAt} onChange={(event) => updateField('importedCreatedAt', event.target.value)} /></Field>
-                <Field label="Updated At"><input className="form-input" value={lead.importedUpdatedAt} onChange={(event) => updateField('importedUpdatedAt', event.target.value)} /></Field>
+                <UserSelect label="Assign To Staff" value={lead.assignedTo} options={staffOptions} onChange={(value) => updateField('assignedTo', value)} allowClear />
+                <UserSelect label="Lead Closed By" value={lead.closedBy} options={staffOptions} onChange={(value) => updateField('closedBy', value)} allowClear />
               </LeadSection>
             )}
 
@@ -869,6 +890,50 @@ function LeadSection({ title, children, columns = 'sm:grid-cols-2 xl:grid-cols-3
       <div className={`mt-5 grid gap-5 ${columns}`}>{children}</div>
     </section>
   );
+}
+
+function pdfEscape(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[character]));
+}
+
+function generateComplianceReportPdf(lead, report) {
+  const reportWindow = window.open('', '_blank', 'noopener,noreferrer');
+  if (!reportWindow) {
+    window.alert('Please allow pop-ups, then click Download PDF again.');
+    return;
+  }
+  const value = (input) => input ? pdfEscape(input) : '<span class="missing">Not provided</span>';
+  const rows = (items, columns) => (items || []).length
+    ? items.map((item) => `<tr>${columns.map(([key]) => `<td>${value(item[key])}</td>`).join('')}</tr>`).join('')
+    : `<tr><td colspan="${columns.length}" class="missing">No records provided</td></tr>`;
+  const observationColumns = [['srNo', 'Sr. No.'], ['area', 'Area / Section'], ['observation', 'Observation'], ['potentialRisk', 'Potential Risk'], ['screenshotReference', 'Evidence Reference']];
+  const checklistColumns = [['srNo', 'Sr. No.'], ['part', 'Part'], ['complianceRequirement', 'Compliance Requirement'], ['status', 'Status'], ['remark', 'Remark']];
+  const checklist = report.checklistReview || [];
+  const compliant = checklist.filter((item) => /^(yes|complied|complete|available|ok)$/i.test(String(item.status || '').trim())).length;
+  const reviewed = checklist.filter((item) => String(item.status || '').trim()).length;
+  const score = checklist.length ? Math.round((compliant / checklist.length) * 100) : 0;
+  const status = score >= 80 ? 'Healthy' : score >= 50 ? 'Needs Attention' : 'Critical';
+  const statusClass = score >= 80 ? 'healthy' : score >= 50 ? 'attention' : 'critical';
+  const generated = new Intl.DateTimeFormat('en-IN', { dateStyle: 'long', timeStyle: 'short' }).format(new Date());
+  const evidence = [...(report.sharedFolderUploads || []), ...(report.screenshotReferences || [])];
+  const finalNotes = report.finalNotes?.length ? report.finalNotes : [{ conclusion: report.conclusion, recommendations: report.recommendations }];
+  const table = (title, columns, items) => `<section><h2>${title}</h2><table><thead><tr>${columns.map(([, label]) => `<th>${label}</th>`).join('')}</tr></thead><tbody>${rows(items, columns)}</tbody></table></section>`;
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Compliance Health Report - ${pdfEscape(lead.company || 'Lead')}</title><style>
+  @page{size:A4;margin:12mm}*{box-sizing:border-box}body{margin:0;color:#17233b;font:11px Arial,sans-serif;line-height:1.45}.cover{background:#0f684f;color:white;padding:28px;border-radius:12px;border-bottom:7px solid #ff5108}.cover small{letter-spacing:2px;text-transform:uppercase;color:#a8dfcf;font-weight:bold}.cover h1{font-size:27px;margin:8px 0}.cover p{margin:3px 0;color:#def4ed}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:14px 0}.metric{border:1px solid #d8e4e0;border-radius:9px;padding:11px}.metric span{display:block;color:#687873;font-size:9px;text-transform:uppercase;font-weight:bold}.metric strong{font-size:18px}.healthy{color:#087443}.attention{color:#d97706}.critical{color:#c62828}section{margin-top:14px;break-inside:avoid}h2{margin:0;padding:8px 10px;background:#eaf6f2;border-left:4px solid #ff5108;color:#0f684f;font-size:14px}table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{border:1px solid #dbe4e1;padding:7px;text-align:left;vertical-align:top;overflow-wrap:anywhere}th{background:#f5f8f7;font-size:9px;text-transform:uppercase}.detail-grid{display:grid;grid-template-columns:1fr 1fr}.detail{border:1px solid #dbe4e1;padding:8px}.detail b{display:block;color:#60716c;font-size:9px;text-transform:uppercase}.text-block{white-space:pre-wrap;border:1px solid #dbe4e1;padding:10px;min-height:45px}.missing{color:#9b5c3b;font-style:italic}.evidence{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.evidence-card{border:1px solid #dbe4e1;padding:8px;border-radius:7px;break-inside:avoid}.evidence-card img{width:100%;max-height:250px;object-fit:contain}.footer{margin-top:18px;padding-top:8px;border-top:1px solid #cdd9d5;color:#66756f;font-size:9px}.action{position:fixed;right:18px;bottom:18px;background:#ff5108;color:#fff;border:0;border-radius:9px;padding:12px 18px;font-weight:bold}@media print{.action{display:none}.cover,h2{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
+  </style></head><body><header class="cover"><small>CCP • Compliance Intelligence</small><h1>COMPLIANCE HEALTH REPORT</h1><p><strong>${value(lead.company)}</strong></p><p>EPR Category: ${value(lead.eprCategory)} • PIBO Category: ${value(lead.piboCategory)}</p><p>Generated: ${pdfEscape(generated)}</p></header>
+  <div class="metrics"><div class="metric"><span>Health Score</span><strong class="${statusClass}">${score}%</strong></div><div class="metric"><span>Overall Status</span><strong class="${statusClass}">${status}</strong></div><div class="metric"><span>Checklist Reviewed</span><strong>${reviewed}/${checklist.length}</strong></div><div class="metric"><span>Evidence Files</span><strong>${evidence.length}</strong></div></div>
+  <section><h2>1. Lead & Company Overview</h2><div class="detail-grid">${[
+    ['Company', lead.company], ['Industry Type', lead.industryType], ['Contact Person', lead.contactPerson], ['Mobile', lead.mobileNo1], ['Email', lead.emails], ['Address', [lead.addressLine1, lead.addressLine2, lead.addressLine3, lead.city, lead.state, lead.pinCode].filter(Boolean).join(', ')],
+    ['Year of Commencement', report.yearOfCommencement], ['Year of Establishment', report.establishmentDate], ['Organization Type', report.organizationType], ['Key Products / Brands', report.keyProductsBrands], ['Product Category', report.productCategory], ['EPR Registration Number', report.eprRegistrationNumber], ['Financial Year Reviewed', report.financialYearReviewed]
+  ].map(([label, item]) => `<div class="detail"><b>${label}</b>${value(item)}</div>`).join('')}</div></section>
+  <section><h2>2. Objective of Review</h2><div class="text-block">${value(report.objectiveReview)}</div></section>
+  ${table('3.1 Key Compliance Observations', observationColumns, report.keyObservations)}
+  ${table('3.2 Annual Return Observations', observationColumns, report.annualReturnObservations)}
+  ${table('4. Compliance Checklist Review', checklistColumns, checklist)}
+  <section><h2>5. Conclusion & Recommendations</h2>${finalNotes.map((note, index) => `<div class="detail-grid"><div class="detail"><b>Conclusion ${index + 1}</b>${value(note.conclusion)}</div><div class="detail"><b>Recommendations ${index + 1}</b>${value(note.recommendations)}</div></div>`).join('')}</section>
+  <section><h2>6. Evidence & Supporting Documents</h2><div class="evidence">${evidence.length ? evidence.map((file, index) => { const source = typeof file === 'string' ? file : (file.dataUrl || file.url || file.preview || ''); const name = typeof file === 'string' ? `Evidence ${index + 1}` : (file.name || `Evidence ${index + 1}`); const image = /^data:image|\.(png|jpe?g|webp|gif)(\?|$)/i.test(source); return `<div class="evidence-card"><b>${pdfEscape(name)}</b>${image ? `<img src="${pdfEscape(source)}" alt="Evidence ${index + 1}">` : `<p>${source ? 'Supporting document attached in CCP.' : 'File reference recorded.'}</p>`}</div>`; }).join('') : '<p class="missing">No evidence uploaded.</p>'}</div></section>
+  <footer class="footer">System-generated Compliance Health Report based on data entered in CCP. It supports internal review and does not replace a statutory/legal audit.</footer><button class="action" onclick="window.print()">Download / Save PDF</button><script>setTimeout(function(){window.print()},500)</script></body></html>`;
+  reportWindow.document.open(); reportWindow.document.write(html); reportWindow.document.close();
 }
 
 function ComplianceHealthReportView({
@@ -947,6 +1012,10 @@ function ComplianceHealthReportView({
               </p>
             </div>
           </div>
+          <div className="flex flex-col gap-3">
+            <button type="button" onClick={() => generateComplianceReportPdf(lead, report)} className="btn-lift inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#ff5108] px-5 font-black text-white shadow-lg shadow-orange-600/20">
+              <Download className="h-5 w-5" /> Download Complete PDF
+            </button>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:min-w-[520px]">
             {reportStats.map((stat) => (
               <div key={stat.label} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-3">
@@ -954,6 +1023,7 @@ function ComplianceHealthReportView({
                 <p className="mt-1 text-[11px] font-black uppercase leading-4 text-slate-500">{stat.label}</p>
               </div>
             ))}
+          </div>
           </div>
         </div>
           <div className="grid border-t border-slate-100 bg-slate-50/70 text-sm font-black text-slate-600 md:grid-cols-4">
@@ -1028,6 +1098,7 @@ function ComplianceHealthReportView({
 
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-end">
           <button type="button" onClick={onBack} className="btn-lift min-h-11 rounded-xl border border-slate-200 bg-white px-8 font-black text-slate-700">Back</button>
+          <button type="button" onClick={() => generateComplianceReportPdf(lead, report)} className="btn-lift inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-orange-200 bg-white px-8 font-black text-orange-600"><Download className="h-4 w-4" /> Download PDF</button>
           <button type="button" disabled={saving} onClick={onOpenSubmit} className="btn-lift min-h-11 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 px-8 font-black text-white shadow-lg shadow-orange-600/20">
             Submit Report
           </button>
@@ -1731,6 +1802,54 @@ function Field({ label, required, children, className = '' }) {
   );
 }
 
+function UserSelect({ label, value, options = [], onChange, allowClear = false }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const wrapperRef = useRef(null);
+  const selected = options.find((option) => String(option.value) === String(value));
+  const matches = options.filter((option) => !query.trim() || String(option.search || `${option.label} ${option.secondary}`).includes(query.trim().toLowerCase())).slice(0, 100);
+
+  useEffect(() => {
+    function close(event) { if (wrapperRef.current && !wrapperRef.current.contains(event.target)) setOpen(false); }
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, []);
+
+  return (
+    <Field label={label}>
+      <div ref={wrapperRef} className="relative">
+        <button type="button" onClick={() => { setOpen((current) => !current); setQuery(''); }} className="form-input flex min-h-14 items-center gap-3 text-left">
+          <UserCheck className="h-5 w-5 shrink-0 text-emerald-700" />
+          <span className="min-w-0 flex-1">
+            <span className={`block truncate font-black ${selected ? 'text-slate-900' : 'text-slate-400'}`}>{selected?.label || 'Search and select a user'}</span>
+            {selected && <span className="block truncate text-xs font-bold text-slate-500">{selected.secondary}</span>}
+          </span>
+          <ChevronDown className={`h-5 w-5 text-slate-400 transition ${open ? 'rotate-180' : ''}`} />
+        </button>
+        {open && (
+          <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-[90] overflow-hidden rounded-xl border border-emerald-100 bg-white shadow-2xl">
+            <div className="border-b border-slate-100 p-3">
+              <div className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 focus-within:border-emerald-400">
+                <Search className="h-4 w-4 text-slate-400" />
+                <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, email or team" className="h-11 min-w-0 flex-1 bg-transparent text-sm font-bold outline-none" />
+              </div>
+            </div>
+            <div className="max-h-72 overflow-auto p-2">
+              {allowClear && value && <button type="button" onClick={() => { onChange(''); setOpen(false); }} className="mb-1 w-full rounded-lg px-3 py-3 text-left text-sm font-black text-red-600 hover:bg-red-50">Clear selection</button>}
+              {!matches.length ? <p className="px-3 py-5 text-center text-sm font-bold text-slate-400">No active user found</p> : matches.map((option) => (
+                <button type="button" key={option.value} onClick={() => { onChange(option.value); setOpen(false); setQuery(''); }} className={`w-full rounded-lg px-3 py-3 text-left hover:bg-emerald-50 ${String(value) === String(option.value) ? 'bg-emerald-50' : ''}`}>
+                  <span className="block font-black text-slate-900">{option.label}</span>
+                  <span className="block text-xs font-bold text-slate-500">{option.secondary}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </Field>
+  );
+}
+
 function SelectLike({ label, required, value, options = [], onChange, disabled = false, placeholder = 'Select or type to create new' }) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef(null);
@@ -1961,6 +2080,8 @@ function MetricOutputCard({ stat, leads, onClose, onExport }) {
 }
 
 function LeadViewModal({ lead, onClose }) {
+  const personName = (value, fallback) => value?.name || fallback || '-';
+  const dateTime = (value) => value ? new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '-';
   const rows = [
     ['Lead ID', lead.leadCode],
     ['Company', lead.company],
@@ -1974,6 +2095,12 @@ function LeadViewModal({ lead, onClose }) {
     ['Email', lead.emails],
     ['PIBO', lead.piboCategory],
     ['EPR', lead.eprCategory]
+  ];
+  const auditRows = [
+    ['Created By', personName(lead.createdBy, lead.createdByName || lead.importedCreatedBy), 'Created At', dateTime(lead.createdAt)],
+    ['Last Updated By', personName(lead.updatedBy, lead.updatedByName), 'Updated At', dateTime(lead.updatedAt)],
+    ['Assigned To', personName(lead.assignedTo, lead.assignedToText), 'Assigned By / At', `${lead.assignedBy || '-'} · ${dateTime(lead.assignedAt)}`],
+    ['Lead Closed By', personName(lead.closedBy, lead.closedByText), 'Closed At', dateTime(lead.closedAt)]
   ];
 
   return (
@@ -1993,6 +2120,17 @@ function LeadViewModal({ lead, onClose }) {
               <p className="mt-1 break-words font-black text-slate-800">{value || '-'}</p>
             </div>
           ))}
+        </div>
+        <div className="border-t border-slate-100 bg-slate-50/70 p-5">
+          <h3 className="mb-3 text-sm font-black uppercase tracking-[0.14em] text-emerald-700">Audit & Ownership</h3>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {auditRows.map(([leftLabel, leftValue, rightLabel, rightValue]) => (
+              <div key={leftLabel} className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-xs font-black uppercase tracking-wider text-slate-400">{leftLabel}</p><p className="mt-1 font-black text-slate-800">{leftValue}</p>
+                <p className="mt-3 text-xs font-black uppercase tracking-wider text-slate-400">{rightLabel}</p><p className="mt-1 text-sm font-bold text-slate-700">{rightValue}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
     </div>
@@ -2044,9 +2182,9 @@ function DirectoryTableHeader({ showing, total, label, rowsPerPage, setRowsPerPa
 
 function normalizeHeaderKey(value) {
   return String(value || '')
+    .trim()
     .toLowerCase()
-    .replace(/[\s._-]+/g, '')
-    .trim();
+    .replace(/[^a-z0-9]/g, '');
 }
 
 function normalizeExistingClient(value) {
@@ -2069,7 +2207,7 @@ function formatExcelValue(value, field) {
     const iso = value.toISOString();
     return field === 'nextFollowUpTime' ? iso.slice(11, 16) : iso.slice(0, 10);
   }
-  if (typeof value === 'number' && ['lastEmailSent', 'leadDate', 'nextFollowUpDate', 'importedCreatedAt', 'importedUpdatedAt'].includes(field)) {
+  if (typeof value === 'number' && ['lastEmailSent', 'leadDate', 'nextFollowUpDate', 'importedCreatedAt', 'importedUpdatedAt', 'assignedAt'].includes(field)) {
     return XLSX.SSF.format('yyyy-mm-dd', value);
   }
   if (typeof value === 'number' && field === 'nextFollowUpTime') {
@@ -2123,14 +2261,20 @@ function mapExcelRowToLead(row, staff) {
     assignedto: 'assignedToText',
     assignto: 'assignedToText',
     assignedtotext: 'assignedToText',
+    assignedtoemail: 'assignedToEmail',
     assignedby: 'assignedBy',
+    assignedbyname: 'assignedBy',
+    assignedbyemail: 'assignedByEmail',
     createdby: 'importedCreatedBy',
+    createdbyname: 'importedCreatedBy',
+    createdbyemail: 'createdByEmail',
     leaddate: 'leadDate',
     nextfollowupdate: 'nextFollowUpDate',
     nextfollowuptime: 'nextFollowUpTime',
     followupremarks: 'followUpRemarks',
     createdat: 'importedCreatedAt',
-    updatedat: 'importedUpdatedAt'
+    updatedat: 'importedUpdatedAt',
+    assignedat: 'assignedAt'
   };
 
   const data = {};

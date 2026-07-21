@@ -34,6 +34,9 @@ jobs:
           node --check src/config/db.js
           node --check scripts/migrateMongoToAtlas.js
 
+      - name: Backend tests
+        run: npm test
+
   frontend:
     name: Frontend Build
     runs-on: ubuntu-latest

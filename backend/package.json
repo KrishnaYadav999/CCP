@@ -4,6 +4,7 @@
   "private": true,
   "main": "src/index.js",
   "scripts": {
+    "test": "node --test test/*.test.js",
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "seed-admin": "node src/seed/adminSeed.js",

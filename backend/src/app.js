@@ -59,7 +59,7 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
 function isPublicCcpReadRequest(req) {
-  return req.method === 'GET' && ['/api/ccp/leads', '/api/ccp/clients'].includes(req.path);
+  return req.method === 'GET' && req.path === '/api/ccp/clients';
 }
 
 app.use(async (req, res, next) => {
