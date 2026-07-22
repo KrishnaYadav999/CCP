@@ -28,3 +28,13 @@ test('frontend media paths no longer use FileReader/base64 persistence', () => {
   const offenders = files.filter((file) => fs.readFileSync(file, 'utf8').includes('new FileReader'));
   assert.deepEqual(offenders, []);
 });
+
+test('large lead imports are split into timeout-safe batches with lightweight responses', () => {
+  const frontend = fs.readFileSync(path.join(__dirname, '../../frontend/src/pages/LeadGeneration.jsx'), 'utf8');
+  const backend = fs.readFileSync(path.join(__dirname, '../src/controllers/leadController.js'), 'utf8');
+  assert.match(frontend, /const chunkSize = 25/);
+  assert.match(frontend, /includeRecords: false/);
+  assert.match(frontend, /Importing batch/);
+  assert.match(backend, /rows\.length > 50/);
+  assert.match(backend, /includeRecords === true/);
+});

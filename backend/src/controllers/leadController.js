@@ -374,6 +374,8 @@ exports.updateLead = async (req, res) => {
 exports.bulkCreateLeads = async (req, res) => {
   const rows = Array.isArray(req.body.leads) ? req.body.leads : [];
   if (!rows.length) return res.status(400).json({ error: 'No leads provided' });
+  if (rows.length > 50) return res.status(400).json({ error: 'A maximum of 50 leads is allowed per batch' });
+  const includeRecords = req.body.includeRecords === true;
 
   const leads = [];
   const failures = [];
@@ -387,8 +389,10 @@ exports.bulkCreateLeads = async (req, res) => {
       normalizeBulkDates(data).forEach((warning) => warnings.push({ row: index + 2, company: String(data.company || ''), ...warning }));
       const lead = await createLeadRecord(data, req.user, { bulk: true });
       await recordAudit({ lead, type: 'lead_created', title: 'Lead imported', description: `Lead ${lead.leadCode} imported`, user: req.user, metadata: { source: 'bulk', row: index + 1 } });
-      await lead.populate('assignedTo createdBy updatedBy closedBy importedBy', PUBLIC_USER_FIELDS);
-      leads.push(normalizeLeadOutput(lead));
+      if (includeRecords) {
+        await lead.populate('assignedTo createdBy updatedBy closedBy importedBy', PUBLIC_USER_FIELDS);
+        leads.push(normalizeLeadOutput(lead));
+      } else leads.push({ _id: lead._id, leadCode: lead.leadCode });
     } catch (err) {
       failures.push({
         row: index + 2,

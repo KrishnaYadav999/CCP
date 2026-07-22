@@ -77,7 +77,7 @@ export const apiService = {
   },
   leads: {
     getList: () => api.get(apiEndpoints.leads.list),
-    bulkImport: (leads) => api.post(apiEndpoints.leads.bulk, { leads }),
+    bulkImport: (leads, options = {}) => api.post(apiEndpoints.leads.bulk, { leads, ...options }),
     create: (payload) => api.post(apiEndpoints.leads.list, payload),
     update: (id, payload) => api.put(apiEndpoints.leads.detail(id), payload)
   },

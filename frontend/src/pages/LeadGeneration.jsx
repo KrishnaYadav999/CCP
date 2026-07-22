@@ -473,10 +473,26 @@ export default function LeadGeneration() {
           workflowStatus: 'draft'
         };
       });
-      const response = await apiService.leads.bulkImport(payload);
-      const successCount = response.data.imported || 0;
-      const failures = response.data.failures || [];
-      const warnings = response.data.warnings || [];
+      const chunkSize = 25;
+      const chunks = Array.from({ length: Math.ceil(payload.length / chunkSize) }, (_, index) => payload.slice(index * chunkSize, (index + 1) * chunkSize));
+      let successCount = 0;
+      const failures = [];
+      const warnings = [];
+      for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
+        setNotice(`Importing batch ${chunkIndex + 1} of ${chunks.length}… (${Math.min(chunkIndex * chunkSize, payload.length)}/${payload.length} processed)`);
+        try {
+          const response = await apiService.leads.bulkImport(chunks[chunkIndex], { includeRecords: false });
+          successCount += response.data.imported || 0;
+          const rowOffset = chunkIndex * chunkSize;
+          (response.data.failures || []).forEach((failure) => failures.push({ ...failure, row: rowOffset + Number(failure.row || 2) }));
+          (response.data.warnings || []).forEach((warning) => warnings.push({ ...warning, row: rowOffset + Number(warning.row || 2) }));
+        } catch (error) {
+          const rowOffset = chunkIndex * chunkSize;
+          const chunkFailures = error?.response?.data?.failures;
+          if (Array.isArray(chunkFailures) && chunkFailures.length) chunkFailures.forEach((failure) => failures.push({ ...failure, row: rowOffset + Number(failure.row || 2) }));
+          else chunks[chunkIndex].forEach((row, index) => failures.push({ row: rowOffset + index + 2, company: row.company || '', error: getApiErrorMessage(error, `Batch ${chunkIndex + 1} failed`) }));
+        }
+      }
 
       if (successCount) {
         setNotice(`${successCount} lead${successCount === 1 ? '' : 's'} imported as drafts.`);
