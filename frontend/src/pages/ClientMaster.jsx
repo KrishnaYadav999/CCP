@@ -633,9 +633,24 @@ export default function ClientMaster() {
 
     try {
       const payload = buildExcelImportPayload();
-      const response = await apiService.clients.bulkImport(payload);
-      const successCount = response.data.imported || 0;
-      const failures = response.data.failures || [];
+      const chunkSize = 10;
+      const chunks = Array.from({ length: Math.ceil(payload.length / chunkSize) }, (_, index) => payload.slice(index * chunkSize, (index + 1) * chunkSize));
+      let successCount = 0;
+      const failures = [];
+      for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
+        setNotice(`Importing client batch ${chunkIndex + 1} of ${chunks.length}… (${Math.min(chunkIndex * chunkSize, payload.length)}/${payload.length} processed)`);
+        try {
+          const response = await apiService.clients.bulkImport(chunks[chunkIndex], { includeRecords: false });
+          successCount += response.data.imported || 0;
+          const rowOffset = chunkIndex * chunkSize;
+          (response.data.failures || []).forEach((failure) => failures.push({ ...failure, row: rowOffset + Number(failure.row || 1) }));
+        } catch (error) {
+          const rowOffset = chunkIndex * chunkSize;
+          const chunkFailures = error?.response?.data?.failures;
+          if (Array.isArray(chunkFailures) && chunkFailures.length) chunkFailures.forEach((failure) => failures.push({ ...failure, row: rowOffset + Number(failure.row || 1) }));
+          else chunks[chunkIndex].forEach((row, index) => failures.push({ row: rowOffset + index + 1, error: getApiErrorMessage(error, `Client batch ${chunkIndex + 1} failed`) }));
+        }
+      }
 
       if (successCount) {
         setNotice(`${successCount} client${successCount === 1 ? '' : 's'} imported as drafts.`);

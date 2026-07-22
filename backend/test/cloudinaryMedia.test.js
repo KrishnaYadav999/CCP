@@ -38,3 +38,13 @@ test('large lead imports are split into timeout-safe batches with lightweight re
   assert.match(backend, /rows\.length > 50/);
   assert.match(backend, /includeRecords === true/);
 });
+
+test('large client imports are split into smaller timeout-safe batches', () => {
+  const frontend = fs.readFileSync(path.join(__dirname, '../../frontend/src/pages/ClientMaster.jsx'), 'utf8');
+  const backend = fs.readFileSync(path.join(__dirname, '../src/controllers/clientController.js'), 'utf8');
+  assert.match(frontend, /const chunkSize = 10/);
+  assert.match(frontend, /Importing client batch/);
+  assert.match(frontend, /clients\.bulkImport\(chunks\[chunkIndex\], \{ includeRecords: false \}\)/);
+  assert.match(backend, /rows\.length > 25/);
+  assert.match(backend, /includeRecords === true/);
+});

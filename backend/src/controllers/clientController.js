@@ -533,6 +533,8 @@ async function createClientRecord(row, user) {
 exports.bulkCreateClients = async (req, res) => {
   const rows = Array.isArray(req.body.clients) ? req.body.clients : [];
   if (!rows.length) return res.status(400).json({ error: 'No clients provided' });
+  if (rows.length > 25) return res.status(400).json({ error: 'A maximum of 25 clients is allowed per batch' });
+  const includeRecords = req.body.includeRecords === true;
 
   const clients = [];
   const failures = [];
@@ -540,8 +542,10 @@ exports.bulkCreateClients = async (req, res) => {
   for (let index = 0; index < rows.length; index += 1) {
     try {
       const { client, crmSync } = await createClientRecord(rows[index], req.user);
-      await client.populate('adminControls.assignedTo', 'name email crmUserId role avatarUrl team teamId managerId operationHeadId');
-      clients.push({ ...normalizeClientOutput(client), crmSync });
+      if (includeRecords) {
+        await client.populate('adminControls.assignedTo', 'name email crmUserId role avatarUrl team teamId managerId operationHeadId');
+        clients.push({ ...normalizeClientOutput(client, req.user), crmSync });
+      } else clients.push({ _id: client._id, integrationKey: client.integrationKey, crmSync });
     } catch (err) {
       failures.push({
         row: index + 1,
