@@ -374,7 +374,7 @@ exports.updateLead = async (req, res) => {
 exports.bulkCreateLeads = async (req, res) => {
   const rows = Array.isArray(req.body.leads) ? req.body.leads : [];
   if (!rows.length) return res.status(400).json({ error: 'No leads provided' });
-  if (rows.length > 50) return res.status(400).json({ error: 'A maximum of 50 leads is allowed per batch' });
+  if (req.baseUrl === '/api/leads' && rows.length > 50) return res.status(400).json({ error: 'A maximum of 50 leads is allowed per batch' });
   const includeRecords = req.body.includeRecords === true;
 
   const leads = [];

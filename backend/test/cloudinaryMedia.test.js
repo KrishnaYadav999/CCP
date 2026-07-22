@@ -47,4 +47,15 @@ test('large client imports are split into smaller timeout-safe batches', () => {
   assert.match(frontend, /clients\.bulkImport\(chunks\[chunkIndex\], \{ includeRecords: false \}\)/);
   assert.match(backend, /rows\.length > 25/);
   assert.match(backend, /includeRecords === true/);
+  assert.match(backend, /req\.baseUrl === '\/api\/clients'/);
+});
+
+test('CCP exposes reconciliation metadata and ships the CRM full-sync implementation prompt', () => {
+  const routes = fs.readFileSync(path.join(__dirname, '../src/routes/ccp.js'), 'utf8');
+  const prompt = fs.readFileSync(path.join(__dirname, '../../docs/CRM_CLIENT_SYNC_PROMPT.md'), 'utf8');
+  assert.match(routes, /router\.get\('\/clients\/reconciliation'/);
+  assert.match(routes, /count: normalized\.length/);
+  assert.match(prompt, /all 265 live applications/);
+  assert.match(prompt, /Do not filter by annual-return applicability/);
+  assert.match(prompt, /Chunk requests into 10 clients each/);
 });

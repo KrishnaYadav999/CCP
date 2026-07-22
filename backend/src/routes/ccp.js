@@ -39,10 +39,13 @@ async function runPublicRead(res, key, loadRecords, normalizeRecord) {
   try {
     await connectDB();
     const records = await loadRecords();
+    const normalized = Array.isArray(records) ? records.map(normalizeRecord) : [];
     return res.json({
       ok: true,
       source: 'ccp',
-      [key]: Array.isArray(records) ? records.map(normalizeRecord) : []
+      count: normalized.length,
+      generatedAt: new Date().toISOString(),
+      [key]: normalized
     });
   } catch (err) {
     console.error(`Public CCP ${key} read failed`, err);
@@ -160,8 +163,19 @@ router.get('/clients', (req, res) => runPublicRead(
       .sort({ createdAt: -1 })
       .lean();
   },
-  normalizeClientForCrm
+ normalizeClientForCrm
 ));
+
+router.get('/clients/reconciliation', asyncHandler(async (req, res) => {
+  const clients = await Client.find({}).select('data.importMeta.uniqueId data.importMeta.leadNumber data.importMeta.ccpClientId').lean();
+  const identities = clients.map((client) => ({
+    clientId: String(client._id),
+    uniqueId: String(client.data?.importMeta?.uniqueId || ''),
+    leadNumber: String(client.data?.importMeta?.leadNumber || ''),
+    ccpClientId: String(client.data?.importMeta?.ccpClientId || '')
+  }));
+  res.json({ ok: true, source: 'ccp', count: clients.length, identities, generatedAt: new Date().toISOString() });
+}));
 
 // CRM-originated Client Master records are written only to CCP. The router-level
 // shared-key guard protects these service-to-service endpoints; a CCP user JWT is

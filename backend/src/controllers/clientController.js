@@ -533,7 +533,7 @@ async function createClientRecord(row, user) {
 exports.bulkCreateClients = async (req, res) => {
   const rows = Array.isArray(req.body.clients) ? req.body.clients : [];
   if (!rows.length) return res.status(400).json({ error: 'No clients provided' });
-  if (rows.length > 25) return res.status(400).json({ error: 'A maximum of 25 clients is allowed per batch' });
+  if (req.baseUrl === '/api/clients' && rows.length > 25) return res.status(400).json({ error: 'A maximum of 25 clients is allowed per batch' });
   const includeRecords = req.body.includeRecords === true;
 
   const clients = [];
@@ -554,12 +554,15 @@ exports.bulkCreateClients = async (req, res) => {
     }
   }
 
+  const expectedTotal = Number(req.body.expectedTotal || 0);
+  const storedTotal = expectedTotal > 0 ? await Client.countDocuments({}) : undefined;
   res.status(failures.length && !clients.length ? 400 : 201).json({
     ok: true,
     imported: clients.length,
     failed: failures.length,
     clients,
-    failures
+    failures,
+    reconciliation: expectedTotal > 0 ? { expectedTotal, storedTotal, complete: storedTotal >= expectedTotal } : undefined
   });
 };
 
