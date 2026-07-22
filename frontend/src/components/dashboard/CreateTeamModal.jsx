@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react'
-import { Users, X } from 'lucide-react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { Check, ChevronDown, Search, Users, X } from 'lucide-react'
 
 export default function CreateTeamModal({ form, users = [], saving, error, onChange, onClose, onSubmit }) {
   const activeUsers = users.filter((user) => user.isActive)
@@ -45,25 +45,11 @@ export default function CreateTeamModal({ form, users = [], saving, error, onCha
           </Field>
 
           <Field label="Manager">
-            <select value={form.manager} onChange={(event) => changeManager(event.target.value)} required className="form-input">
-              <option value="">Select manager</option>
-              {managers.map((user) => (
-                <option key={user._id || user.id} value={user._id || user.id}>
-                  {user.name || user.email}
-                </option>
-              ))}
-            </select>
+            <UserDropdown value={form.manager} users={managers} placeholder="Select manager" required onChange={changeManager} />
           </Field>
 
           <Field label="Operation Head">
-            <select value={form.operationHead} onChange={(event) => onChange({ ...form, operationHead: event.target.value })} className="form-input">
-              <option value="">Optional</option>
-              {activeUsers.map((user) => (
-                <option key={user._id || user.id} value={user._id || user.id}>
-                  {user.name || user.email}
-                </option>
-              ))}
-            </select>
+            <UserDropdown value={form.operationHead} users={activeUsers} placeholder="Optional" allowEmpty onChange={(operationHead) => onChange({ ...form, operationHead })} />
           </Field>
 
           <div className="sm:col-span-2">
@@ -134,9 +120,79 @@ function EmptyState({ text }) {
 
 function Field({ label, children }) {
   return (
-    <label className="block">
+    <div className="block">
       <span className="text-sm font-black text-slate-700">{label}</span>
       <div className="mt-2">{children}</div>
-    </label>
+    </div>
+  )
+}
+
+function UserDropdown({ value, users, placeholder, allowEmpty = false, required = false, onChange }) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const rootRef = useRef(null)
+  const selected = users.find((user) => String(user._id || user.id) === String(value))
+  const filtered = users.filter((user) => `${user.name || ''} ${user.email || ''}`.toLowerCase().includes(query.trim().toLowerCase()))
+
+  useEffect(() => {
+    function closeOnOutsideClick(event) {
+      if (!rootRef.current?.contains(event.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', closeOnOutsideClick)
+    return () => document.removeEventListener('mousedown', closeOnOutsideClick)
+  }, [])
+
+  function choose(nextValue) {
+    onChange(nextValue)
+    setQuery('')
+    setOpen(false)
+  }
+
+  return (
+    <div ref={rootRef} className="relative">
+      {required && <input className="pointer-events-none absolute h-px w-px opacity-0" value={value} onChange={() => {}} required tabIndex={-1} />}
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className={`form-input flex items-center justify-between gap-3 text-left transition ${open ? 'border-emerald-400 ring-4 ring-emerald-100' : ''}`}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className={`min-w-0 truncate ${selected ? 'font-black text-slate-900' : 'font-bold text-slate-500'}`}>
+          {selected?.name || selected?.email || placeholder}
+        </span>
+        <ChevronDown className={`h-5 w-5 shrink-0 text-slate-400 transition ${open ? 'rotate-180 text-emerald-700' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-[80] overflow-hidden rounded-2xl border border-emerald-100 bg-white shadow-2xl shadow-slate-900/20">
+          <div className="border-b border-slate-100 p-2.5">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search user..." className="h-10 w-full rounded-xl bg-slate-50 pl-9 pr-3 text-sm font-bold outline-none ring-1 ring-slate-200 focus:bg-white focus:ring-2 focus:ring-emerald-300" />
+            </div>
+          </div>
+          <div className="max-h-56 overflow-y-auto p-2" role="listbox">
+            {allowEmpty && (
+              <button type="button" onClick={() => choose('')} className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-bold transition ${!value ? 'bg-emerald-50 text-emerald-800' : 'text-slate-600 hover:bg-slate-50'}`}>
+                Optional {!value && <Check className="h-4 w-4" />}
+              </button>
+            )}
+            {filtered.map((user) => {
+              const userId = String(user._id || user.id)
+              const active = userId === String(value)
+              return (
+                <button key={userId} type="button" onClick={() => choose(userId)} className={`mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${active ? 'bg-[#ff5108] text-white shadow-sm' : 'text-slate-700 hover:bg-emerald-50 hover:text-emerald-800'}`} role="option" aria-selected={active}>
+                  <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-xs font-black ${active ? 'bg-white/20' : 'bg-emerald-100 text-emerald-800'}`}>{String(user.name || user.email || 'U').charAt(0).toUpperCase()}</span>
+                  <span className="min-w-0 flex-1"><span className="block truncate text-sm font-black">{user.name || user.email}</span><span className={`block truncate text-xs font-semibold ${active ? 'text-white/75' : 'text-slate-400'}`}>{user.email}</span></span>
+                  {active && <Check className="h-4 w-4 shrink-0" />}
+                </button>
+              )
+            })}
+            {!filtered.length && <p className="px-3 py-6 text-center text-sm font-bold text-slate-400">No matching user found</p>}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }

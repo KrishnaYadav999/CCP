@@ -5,6 +5,12 @@ const ScreenshotReferenceSchema = new mongoose.Schema({
   type: { type: String, trim: true },
   size: { type: Number, default: 0 },
   dataUrl: { type: String },
+  url: { type: String },
+  secureUrl: { type: String },
+  storageKey: { type: String, trim: true },
+  publicId: { type: String, trim: true },
+  resourceType: { type: String, trim: true },
+  provider: { type: String, trim: true },
   uploadedAt: { type: Date, default: Date.now }
 }, { _id: false });
 
@@ -13,6 +19,12 @@ const SharedFolderUploadSchema = new mongoose.Schema({
   type: { type: String, trim: true },
   size: { type: Number, default: 0 },
   relativePath: { type: String, trim: true },
+  url: { type: String },
+  secureUrl: { type: String },
+  storageKey: { type: String, trim: true },
+  publicId: { type: String, trim: true },
+  resourceType: { type: String, trim: true },
+  provider: { type: String, trim: true },
   uploadedAt: { type: Date, default: Date.now }
 }, { _id: false });
 

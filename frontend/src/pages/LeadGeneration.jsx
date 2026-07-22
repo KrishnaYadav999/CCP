@@ -5,7 +5,8 @@ import * as XLSX from 'xlsx';
 import DashboardShell from '../components/dashboard/DashboardShell';
 import CrmConnectButton from '../components/dashboard/CrmConnectButton';
 import ProfileModal from '../components/dashboard/ProfileModal';
-import { apiService, getApiErrorMessage } from '../services/api';
+import { apiService, getApiErrorMessage, uploadMedia, uploadMediaFiles } from '../services/api';
+import { adminRoles } from '../constants/dashboard';
 
 const defaultComplianceObservations = [
   { srNo: '1', area: 'Part A General Information', observation: '', potentialRisk: '', screenshotReference: '' },
@@ -200,6 +201,7 @@ const stateCities = {
 
 export default function LeadGeneration() {
   const [currentUser, setCurrentUser] = useState(null);
+  const canBulkImport = adminRoles.includes(currentUser?.role);
   const [profileOpen, setProfileOpen] = useState(false);
   const [staff, setStaff] = useState([]);
   const [leads, setLeads] = useState([]);
@@ -331,12 +333,11 @@ export default function LeadGeneration() {
     showToast(`${next.label} step unlocked.`, 'success');
   }
 
-  function handleBusinessCard(event) {
+  async function handleBusinessCard(event) {
     const file = event.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => updateField('businessCardUrl', reader.result);
-    reader.readAsDataURL(file);
+    try { const uploaded = await uploadMedia(file, 'lead-business-cards'); updateField('businessCardUrl', uploaded.url); showToast('Business card uploaded to Cloudinary.', 'success'); }
+    catch (error) { showToast(getApiErrorMessage(error, error.message || 'Cloudinary upload failed'), 'error'); }
   }
 
   async function handleScreenshotUpload(event) {
@@ -344,18 +345,9 @@ export default function LeadGeneration() {
     event.target.value = '';
     if (!files.length) return;
 
-    const uploads = await Promise.all(files.map((file) => new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve({
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        dataUrl: reader.result,
-        uploadedAt: new Date().toISOString()
-      });
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    })));
+    let uploads;
+    try { uploads = await uploadMediaFiles(files, 'lead-compliance-evidence'); }
+    catch (error) { showToast(getApiErrorMessage(error, error.message || 'Cloudinary upload failed'), 'error'); return; }
 
     setLead((current) => {
       const report = { ...createEmptyComplianceReport(), ...(current.complianceHealthReport || {}) };
@@ -370,18 +362,14 @@ export default function LeadGeneration() {
     showToast(`${uploads.length} screenshot${uploads.length === 1 ? '' : 's'} uploaded.`, 'success');
   }
 
-  function handleSharedFolderUpload(event) {
+  async function handleSharedFolderUpload(event) {
     const files = Array.from(event.target.files || []);
     event.target.value = '';
     if (!files.length) return;
 
-    const uploads = files.map((file) => ({
-      name: file.name,
-      type: file.type || 'folder item',
-      size: file.size,
-      relativePath: file.webkitRelativePath || file.name,
-      uploadedAt: new Date().toISOString()
-    }));
+    let uploads;
+    try { const cloudFiles = await uploadMediaFiles(files, 'lead-shared-folders'); uploads = cloudFiles.map((uploaded, index) => ({ ...uploaded, relativePath: files[index].webkitRelativePath || files[index].name })); }
+    catch (error) { showToast(getApiErrorMessage(error, error.message || 'Cloudinary upload failed'), 'error'); return; }
 
     setLead((current) => {
       const report = { ...createEmptyComplianceReport(), ...(current.complianceHealthReport || {}) };
@@ -700,7 +688,7 @@ export default function LeadGeneration() {
             </div>
           </div>
 
-          <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          {canBulkImport && <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <p className="text-sm font-black text-slate-950">Excel upload (Lead Import)</p>
               <p className="mt-1 text-xs font-bold text-slate-500">
@@ -726,7 +714,7 @@ export default function LeadGeneration() {
                 {importing ? 'Importing...' : 'Import Drafts'}
               </button>
             </div>
-          </div>
+          </div>}
 
           <section className="mt-6 rounded-2xl border border-emerald-100 bg-gradient-to-r from-emerald-50 via-white to-cyan-50 p-3 shadow-lg shadow-emerald-900/5">
             <div className="grid gap-2 sm:grid-cols-4">
@@ -1501,7 +1489,7 @@ function ScreenshotReferencePanel({ files, onUpload, onRemove }) {
               <div key={`${file.name}-${index}`} className="group relative overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                 <div className="grid aspect-video place-items-center bg-slate-100">
                   {String(file.type || '').startsWith('image/') ? (
-                    <img src={file.dataUrl} alt={file.name} className="h-full w-full object-cover" />
+                    <img src={file.url || file.secureUrl || file.dataUrl} alt={file.name} className="h-full w-full object-cover" />
                   ) : (
                     <Upload className="h-6 w-6 text-slate-500" />
                   )}

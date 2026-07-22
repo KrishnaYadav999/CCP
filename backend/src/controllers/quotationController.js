@@ -1,5 +1,9 @@
 const Quotation = require('../models/Quotation');
 const Lead = require('../models/Lead');
+const PiboCategory = require('../models/PiboCategory');
+const ServiceCategory = require('../models/ServiceCategory');
+
+const normalizeCategory = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
 function cleanQuotation(body, user, source) {
   const items = Array.isArray(body.items) ? body.items : [];
@@ -32,6 +36,41 @@ function validateQuotation(row) {
 exports.list = async (req, res) => {
   const quotations = await Quotation.find().populate('selectedLead', 'leadCode company contactPerson').sort({ updatedAt: -1 });
   res.json({ ok: true, quotations });
+};
+
+exports.listPiboCategories = async (req, res) => {
+  const categories = await PiboCategory.find().sort({ parent: 1, name: 1 }).select('name parent');
+  res.json({ ok: true, categories: categories.map((category) => ({ name: category.name, parent: category.parent })) });
+};
+
+exports.createPiboCategory = async (req, res) => {
+  const name = String(req.body.name || '').trim().replace(/\s+/g, ' ');
+  const parent = ['PIBO', 'SIMP', 'PWP'].includes(req.body.parent) ? req.body.parent : 'PIBO';
+  if (!name) return res.status(400).json({ error: 'PIBO category name is required' });
+  if (name.length > 60) return res.status(400).json({ error: 'PIBO category must be 60 characters or fewer' });
+  const category = await PiboCategory.findOneAndUpdate(
+    { normalizedName: `${parent.toLowerCase()}:${normalizeCategory(name)}` },
+    { $setOnInsert: { name, parent, normalizedName: `${parent.toLowerCase()}:${normalizeCategory(name)}`, createdBy: req.user?._id } },
+    { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
+  );
+  res.status(201).json({ ok: true, category: { name: category.name, parent: category.parent } });
+};
+
+exports.listServiceCategories = async (req, res) => {
+  const categories = await ServiceCategory.find().sort({ name: 1 }).select('name');
+  res.json({ ok: true, categories: categories.map((category) => category.name) });
+};
+
+exports.createServiceCategory = async (req, res) => {
+  const name = String(req.body.name || '').trim().replace(/\s+/g, ' ');
+  if (!name) return res.status(400).json({ error: 'Service category name is required' });
+  if (name.length > 60) return res.status(400).json({ error: 'Service category must be 60 characters or fewer' });
+  const category = await ServiceCategory.findOneAndUpdate(
+    { normalizedName: normalizeCategory(name) },
+    { $setOnInsert: { name, normalizedName: normalizeCategory(name), createdBy: req.user?._id } },
+    { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }
+  );
+  res.status(201).json({ ok: true, category: category.name });
 };
 
 exports.upsert = async (req, res) => {

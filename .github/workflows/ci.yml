@@ -33,6 +33,8 @@ jobs:
           node --check src/index.js
           node --check src/config/db.js
           node --check scripts/migrateMongoToAtlas.js
+          node --check scripts/migrateBase64MediaToCloudinary.js
+          node --check src/controllers/mediaController.js
 
       - name: Backend tests
         run: npm test

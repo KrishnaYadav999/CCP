@@ -1,6 +1,7 @@
 import React from 'react'
 import { ImagePlus, Trash2, X } from 'lucide-react'
 import { defaultTeams, roles, roleLabels } from '../../constants/dashboard'
+import { uploadMedia } from '../../services/api'
 
 export default function AddUserModal({ form, saving, error, users = [], teams = [], onChange, onClose, onSubmit }) {
   const teamOptions = [
@@ -10,7 +11,7 @@ export default function AddUserModal({ form, saving, error, users = [], teams = 
   const activeUsers = users.filter((user) => user.isActive)
   const managers = activeUsers.filter((user) => user.role === 'manager')
 
-  function handleAvatarChange(event) {
+  async function handleAvatarChange(event) {
     const file = event.target.files?.[0]
     if (!file) return
 
@@ -20,11 +21,12 @@ export default function AddUserModal({ form, saving, error, users = [], teams = 
       return
     }
 
-    const reader = new FileReader()
-    reader.onload = () => {
-      onChange({ ...form, avatarUrl: reader.result })
+    try {
+      const uploaded = await uploadMedia(file, 'user-avatars')
+      onChange({ ...form, avatarUrl: uploaded.url })
+    } catch (error) {
+      window.alert(error.message || 'Cloudinary upload failed.')
     }
-    reader.readAsDataURL(file)
   }
 
   return (

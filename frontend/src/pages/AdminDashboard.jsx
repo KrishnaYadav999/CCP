@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft,
   CalendarDays,
+  ClipboardList,
   Mail,
   Plus,
   RefreshCw,
@@ -19,6 +20,7 @@ import Sidebar from '../components/dashboard/Sidebar'
 import Topbar from '../components/dashboard/Topbar'
 import UserActionsMenu from '../components/dashboard/UserActionsMenu'
 import UserDetailsModal from '../components/dashboard/UserDetailsModal'
+import CrmConnectButton from '../components/dashboard/CrmConnectButton'
 import { adminRoles, defaultUserForm, roleLabels } from '../constants/dashboard'
 import { apiService, getApiErrorMessage } from '../services/api'
 
@@ -62,7 +64,7 @@ export default function AdminDashboard() {
   const [notice, setNotice] = useState('')
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
-  const [rowsPerPage, setRowsPerPage] = useState(5)
+  const [rowsPerPage, setRowsPerPage] = useState(8)
   const [page, setPage] = useState(1)
   const [modalOpen, setModalOpen] = useState(false)
   const [teamModalOpen, setTeamModalOpen] = useState(false)
@@ -75,6 +77,8 @@ export default function AdminDashboard() {
   const [profileOpen, setProfileOpen] = useState(false)
   const [resyncing, setResyncing] = useState('')
   const navigate = useNavigate()
+  const location = useLocation()
+  const isHome = new URLSearchParams(location.search).get('section') === 'home'
 
   const canManageUsers = adminRoles.includes(currentUser?.role)
 
@@ -358,6 +362,51 @@ export default function AdminDashboard() {
     )
   }
 
+  if (isHome) {
+    const modules = [
+      { title: 'Lead Generator', description: 'Create, import and assign leads from one guided workspace.', path: '/sales/lead-generation', icon: ClipboardList, accent: 'from-orange-500 to-orange-600' },
+      { title: 'Client Master Generator', description: 'Build client masters, quotations and compliance records.', path: '/sales/client-master', icon: UserRound, accent: 'from-teal-600 to-cyan-700' },
+      { title: 'Admin User Master', description: 'Manage users, teams, roles and CRM synchronization.', path: '/dashboard', icon: Users, accent: 'from-emerald-700 to-green-800' }
+    ]
+
+    return (
+      <main className="min-h-screen bg-[#eef7f5] text-slate-900">
+        <div className="flex min-h-screen">
+          <aside className={`fixed inset-y-0 left-0 z-40 w-[296px] transition-all duration-300 lg:translate-x-0 ${sidebarCollapsed ? 'lg:w-[84px]' : 'lg:w-[296px]'} ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+            <Sidebar collapsed={sidebarCollapsed} onToggleCollapsed={() => setSidebarCollapsed((value) => !value)} onClose={() => setSidebarOpen(false)} />
+          </aside>
+          {sidebarOpen && <button type="button" className="fixed inset-0 z-30 bg-slate-950/30 lg:hidden" onClick={() => setSidebarOpen(false)} aria-label="Close navigation" />}
+          <section className={`min-w-0 flex-1 transition-all duration-300 ${sidebarCollapsed ? 'lg:ml-[84px]' : 'lg:ml-[296px]'}`}>
+            <Topbar currentUser={currentUser} onOpenProfile={() => setProfileOpen(true)} onOpenSidebar={() => setSidebarOpen(true)} onToggleSidebar={() => setSidebarCollapsed((value) => !value)} sidebarCollapsed={sidebarCollapsed} onLogout={handleLogout} />
+            <div className="px-4 py-8 sm:px-6 lg:px-10">
+              <div className="overflow-hidden rounded-[32px] bg-gradient-to-br from-[#0b664e] via-[#087b6d] to-[#178c86] p-7 text-white shadow-xl shadow-emerald-900/15 sm:p-10">
+                <p className="text-sm font-black uppercase tracking-[0.22em] text-emerald-100">CCP Workspace</p>
+                <div className="mt-3 flex flex-wrap items-end justify-between gap-6">
+                  <div>
+                    <h1 className="text-3xl font-black sm:text-4xl">Welcome to e-Connect</h1>
+                    <p className="mt-3 max-w-2xl font-bold text-emerald-50/90">Choose a CCP module below or open CRM e-Connect directly.</p>
+                  </div>
+                  <CrmConnectButton className="border border-white/25 bg-none !bg-white !text-emerald-800 shadow-none" />
+                </div>
+              </div>
+              <div className="mt-7 grid gap-5 lg:grid-cols-3">
+                {modules.map(({ title, description, path, icon: Icon, accent }) => (
+                  <button key={title} type="button" onClick={() => navigate(path)} className="group rounded-[26px] border border-emerald-100 bg-white p-6 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-xl hover:shadow-emerald-900/10">
+                    <span className={`grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br ${accent} text-white shadow-lg`}><Icon className="h-7 w-7" /></span>
+                    <h2 className="mt-6 text-xl font-black text-slate-950">{title}</h2>
+                    <p className="mt-2 min-h-12 text-sm font-bold leading-6 text-slate-500">{description}</p>
+                    <span className="mt-6 inline-flex items-center gap-2 font-black text-emerald-700">Open module <ArrowLeft className="h-4 w-4 rotate-180 transition group-hover:translate-x-1" /></span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </section>
+        </div>
+        {profileOpen && <ProfileModal user={currentUser} saving={false} onClose={() => setProfileOpen(false)} onLogout={handleLogout} onSave={() => {}} onUpdatePassword={() => {}} />}
+      </main>
+    )
+  }
+
   return (
     <main className="min-h-screen bg-[#eef7f5] text-slate-900">
       <div className="flex min-h-screen">
@@ -400,6 +449,7 @@ export default function AdminDashboard() {
                 <div className="flex items-center gap-4">
                   <button
                     type="button"
+                    onClick={() => navigate('/dashboard?section=home')}
                     className="btn-lift inline-flex h-11 w-11 items-center justify-center rounded-lg border border-emerald-100 bg-white text-emerald-700 shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50"
                     aria-label="Back"
                     title="Back"
@@ -414,33 +464,7 @@ export default function AdminDashboard() {
 
                 {canManageUsers && (
                   <div className="flex flex-wrap items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => handleResync('users')}
-                      disabled={Boolean(resyncing)}
-                      className="btn-lift inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 font-black text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      <RefreshCw className={`h-4 w-4 ${resyncing === 'users' ? 'animate-spin' : ''}`} />
-                      Sync CRM Users
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleResync('teams')}
-                      disabled={Boolean(resyncing)}
-                      className="btn-lift inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 font-black text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      <RefreshCw className={`h-4 w-4 ${resyncing === 'teams' ? 'animate-spin' : ''}`} />
-                      Sync CRM Teams
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleResync('notifications')}
-                      disabled={Boolean(resyncing)}
-                      className="btn-lift inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 font-black text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      <RefreshCw className={`h-4 w-4 ${resyncing === 'notifications' ? 'animate-spin' : ''}`} />
-                      Sync CRM Notifications
-                    </button>
+                    <CrmConnectButton />
                     <button
                       type="button"
                       onClick={() => {
@@ -514,7 +538,7 @@ export default function AdminDashboard() {
                     onChange={(event) => setRowsPerPage(Number(event.target.value))}
                     className="h-10 rounded-lg border border-slate-200 bg-white px-3 font-black outline-none focus:border-emerald-400"
                   >
-                    {[5, 10, 20].map((count) => (
+                    {[8, 16, 24].map((count) => (
                       <option key={count} value={count}>
                         {count}
                       </option>

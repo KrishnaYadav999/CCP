@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Bell, CheckCheck, Info, LogOut, Menu, PlugZap, UserRound, X } from 'lucide-react'
+import { Bell, CheckCheck, Info, LogOut, Menu, UserRound, X } from 'lucide-react'
 import { roleLabels } from '../../constants/dashboard'
 import { apiService } from '../../services/api'
 
@@ -99,16 +99,6 @@ export default function Topbar({ currentUser, onOpenProfile, onOpenSidebar, onLo
             <Menu className="h-5 w-5" />
           </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              window.location.href = 'https://ananttattva.com/'
-            }}
-            className="btn-lift inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 font-black text-white shadow-lg shadow-emerald-700/20 transition hover:bg-emerald-800 sm:px-5"
-          >
-            <PlugZap className="h-5 w-5" />
-            <span className="hidden sm:inline">CRM Connect</span>
-          </button>
         </div>
 
         <div className="flex shrink-0 items-center gap-2 sm:gap-3">

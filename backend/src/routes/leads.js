@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const leadCtrl = require('../controllers/leadController');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireRoles } = require('../middleware/auth');
+const { ADMIN_ROLES } = require('../constants/roles');
 const asyncHandler = require('../utils/asyncHandler');
 const historyCtrl = require('../controllers/leadHistoryController');
 
@@ -15,7 +16,7 @@ function requireHistoryAccess(req, res, next) {
 router.get('/', requireAuth, asyncHandler(leadCtrl.listLeads));
 router.get('/:id/history', requireHistoryAccess, asyncHandler(historyCtrl.getHistory));
 router.post('/:id/history/email', requireHistoryAccess, asyncHandler(historyCtrl.logEmail));
-router.post('/bulk', requireAuth, asyncHandler(leadCtrl.bulkCreateLeads));
+router.post('/bulk', requireAuth, requireRoles(ADMIN_ROLES), asyncHandler(leadCtrl.bulkCreateLeads));
 router.post('/', requireAuth, asyncHandler(leadCtrl.createLead));
 router.put('/:id', requireAuth, asyncHandler(leadCtrl.updateLead));
 

@@ -18,6 +18,10 @@ const UserSchema = new mongoose.Schema({
   otp: { type: String },
   otpExpires: { type: Date },
   otpIssuedAt: { type: Date },
+  passwordResetOtpHash: { type: String },
+  passwordResetExpires: { type: Date },
+  passwordResetIssuedAt: { type: Date },
+  passwordResetAttempts: { type: Number, default: 0, min: 0 },
   isActive: { type: Boolean, default: true },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, { timestamps: true });

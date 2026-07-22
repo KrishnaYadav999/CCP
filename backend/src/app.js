@@ -10,6 +10,8 @@ const crmRoutes = require('./routes/crm');
 const teamRoutes = require('./routes/teams');
 const notificationRoutes = require('./routes/notifications');
 const quotationRoutes = require('./routes/quotations');
+const mediaRoutes = require('./routes/media');
+const { rejectEmbeddedMedia } = require('./controllers/mediaController');
 
 const app = express();
 
@@ -57,6 +59,7 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
+app.use(rejectEmbeddedMedia);
 
 function isPublicCcpReadRequest(req) {
   return req.method === 'GET' && req.path === '/api/ccp/clients';
@@ -84,6 +87,7 @@ app.use('/api/crm', crmRoutes);
 app.use('/api/teams', teamRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/quotations', quotationRoutes);
+app.use('/api/media', mediaRoutes);
 
 app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);
