@@ -1,9 +1,31 @@
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 const Client = require('../models/Client');
+const AnnualReturn = require('../models/AnnualReturn');
+const Lead = require('../models/Lead');
 const User = require('../models/User');
 const { readUserName, upsertClientPendingApproval } = require('../utils/pendingApproval');
 const { syncPendingApprovalToCrm } = require('../utils/crmPendingApprovalSync');
 const { buildClientVisibilityQuery } = require('../utils/visibilityScope');
+const { recordAudit } = require('./leadHistoryController');
+const { ADMIN_ROLES } = require('../constants/roles');
+
+const isAdmin = (user) => ADMIN_ROLES.includes(String(user?.role || '').toLowerCase());
+
+function stripDangerousKeys(value) {
+  if (Array.isArray(value)) return value.map(stripDangerousKeys);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => !['__proto__', 'prototype', 'constructor'].includes(key))
+    .map(([key, nested]) => [key, stripDangerousKeys(nested)]));
+}
+
+async function auditQuotation(client, user, type, title, description, metadata = {}) {
+  if (!client?.selectedLead) return;
+  const lead = await Lead.findById(client.selectedLead).lean();
+  if (!lead) return;
+  await recordAudit({ lead, user, type, title, description, metadata: { clientId: String(client._id), quotationNumber: client.data?.validation?.quotationNumber || '', ...metadata } });
+}
 
 const INVALID_IDENTITY_VALUES = new Set(['', 'n/a', 'na', '-', 'null', 'none', 'nil', 'not applicable']);
 
@@ -103,6 +125,7 @@ function readFirstPresentValue(...values) {
 }
 
 function normalizeClientData(data = {}) {
+  data = stripDangerousKeys(data);
   const basic = { ...(data.basic || {}) };
   const onboardingYear = readFirstPresentValue(
     basic.onboardingYear,
@@ -257,33 +280,66 @@ async function enrichClientOwnership(input = {}, user) {
     ownership.createdByEmail = String(ownership.createdByEmail).toLowerCase().trim();
   }
 
-  if (!adminControls.assignedTo) {
-    if (adminControls.assignedToText && !adminControls.assignedToEmail && String(adminControls.assignedToText).includes('@')) {
-      adminControls.assignedToEmail = String(adminControls.assignedToText).toLowerCase().trim();
-    }
-    return ownership;
+  if (adminControls.assignedToEmail) {
+    adminControls.assignedToEmail = String(adminControls.assignedToEmail).toLowerCase().trim();
   }
 
-  if (!mongoose.Types.ObjectId.isValid(String(adminControls.assignedTo))) {
+  // A CRM MongoDB id is external identity only. Resolve it to a CCP User via
+  // crmUserId first, then email, and never assign the external id directly.
+  let assignedUser = null;
+  if (adminControls.assignedToCrmUserId) {
+    assignedUser = await User.findOne({ crmUserId: String(adminControls.assignedToCrmUserId).trim() })
+      .select('name email crmUserId').lean();
+  }
+  if (!assignedUser && adminControls.assignedToEmail) {
+    assignedUser = await User.findOne({ email: adminControls.assignedToEmail })
+      .select('name email crmUserId').lean();
+  }
+
+  if (!assignedUser && adminControls.assignedTo && mongoose.Types.ObjectId.isValid(String(adminControls.assignedTo))) {
+    assignedUser = await User.findById(adminControls.assignedTo).select('name email crmUserId').lean();
+  }
+
+  if (!assignedUser && adminControls.assignedTo) {
     adminControls.assignedToText = adminControls.assignedToText || String(adminControls.assignedTo).trim();
     adminControls.assignedToCrmUserId = adminControls.assignedToCrmUserId || String(adminControls.assignedTo).trim();
     delete adminControls.assignedTo;
-    return ownership;
   }
-
-  const assignedUser = await User.findById(adminControls.assignedTo)
-    .select('name email crmUserId')
-    .lean();
   if (!assignedUser) return ownership;
 
+  adminControls.assignedTo = assignedUser._id;
   adminControls.assignedToText = adminControls.assignedToText || assignedUser.name || assignedUser.email || '';
-  adminControls.assignedToEmail = adminControls.assignedToEmail || assignedUser.email || '';
+  adminControls.assignedToEmail = assignedUser.email || adminControls.assignedToEmail || '';
   adminControls.assignedToCrmUserId = adminControls.assignedToCrmUserId || assignedUser.crmUserId || '';
   if (adminControls.assignedToEmail) {
     adminControls.assignedToEmail = String(adminControls.assignedToEmail).toLowerCase().trim();
   }
 
   return ownership;
+}
+
+function normalizedClientBusinessKey(row = {}, data = row.data || {}) {
+  const basic = data.basic || {};
+  const name = basic.clientLegalName || basic.tradeName || '';
+  const email = data.authorised?.email || data.coordinating?.email || '';
+  const mobile = data.otp?.mobile || data.authorised?.mobile || data.coordinating?.mobile || '';
+  const selectedLead = row.selectedLead?._id || row.selectedLead || '';
+  return [name, email, mobile, selectedLead]
+    .map((value) => String(value || '').trim().toLowerCase())
+    .join('|');
+}
+
+function clientIntegrationIdentity(row = {}, data = row.data || {}) {
+  const importMeta = data.importMeta || {};
+  const uniqueId = readIdentityValue(importMeta.uniqueId);
+  if (uniqueId) return { key: `unique:${uniqueId.toLowerCase()}`, query: { 'data.importMeta.uniqueId': uniqueId } };
+  const ccpClientId = readIdentityValue(importMeta.ccpClientId);
+  if (ccpClientId) return { key: `ccp:${ccpClientId.toLowerCase()}`, query: { 'data.importMeta.ccpClientId': ccpClientId } };
+  const businessKey = normalizedClientBusinessKey(row, data);
+  return {
+    key: `business:${crypto.createHash('sha256').update(businessKey).digest('hex')}`,
+    query: { integrationKey: `business:${crypto.createHash('sha256').update(businessKey).digest('hex')}` }
+  };
 }
 
 async function backfillApprovalStatus() {
@@ -327,7 +383,7 @@ async function backfillOnboardingYear() {
   }));
 }
 
-function normalizeClientOutput(client) {
+function normalizeClientOutput(client, viewer) {
   const plain = typeof client.toObject === 'function' ? client.toObject() : client;
   const data = plain.data || {};
   const importMeta = data.importMeta || {};
@@ -346,6 +402,11 @@ function normalizeClientOutput(client) {
     leadNumber: rawLeadNumber
   };
   plain.data = data;
+  if (!isAdmin(viewer) && plain.data?.cpcb) {
+    plain.data.cpcb = { ...plain.data.cpcb };
+    delete plain.data.cpcb.ceprPassword;
+    delete plain.data.cpcb.loginPassword;
+  }
   plain.clientIdentity = {
     key: uniqueId || leadNumber || email || mobile || name || String(plain._id || plain.id || ''),
     source: uniqueId ? 'uniqueId' : leadNumber ? 'leadNumber' : (email || mobile) ? 'contact' : name ? 'name' : 'id',
@@ -379,7 +440,7 @@ exports.listClients = async (req, res) => {
     .populate('selectedLead', 'leadCode company status emails mobileNo1 piboCategory eprCategory addressLine1 addressLine2 addressLine3 state city pinCode contactPerson designation')
     .populate('adminControls.assignedTo', 'name email crmUserId role avatarUrl team teamId managerId operationHeadId')
     .sort({ createdAt: -1 });
-  res.json({ ok: true, clients: clients.map(normalizeClientOutput) });
+  res.json({ ok: true, clients: clients.map((client) => normalizeClientOutput(client, req.user)) });
 };
 
 exports.createClient = async (req, res) => {
@@ -391,49 +452,41 @@ exports.createClient = async (req, res) => {
     onboardingYear: req.body.onboardingYear,
     firstAnnualReturnYear: req.body.firstAnnualReturnYear
   });
-  let data = applyRequestYearsToData(normalizeClientData(req.body.data || {}), req.body);
-  const selectedLead = req.body.selectedLead || undefined;
-  const adminControls = createDefaultAdminControls(req.body.adminControls || {});
-  const ownership = await enrichClientOwnership({ adminControls }, req.user);
-  data = applyAssignedNameToImportMeta(data, ownership.adminControls);
-
-  if (workflowStatus === 'submitted' && !data?.basic?.clientLegalName) {
-    return res.status(400).json({ error: 'Client Legal Name is required before submit' });
+  let result;
+  try {
+    result = await createClientRecord(req.body, req.user);
+  } catch (err) {
+    return res.status(err.statusCode || 500).json({ ok: false, error: err.message || 'Unable to save client' });
   }
-
-  let client = await Client.create({
-    selectedLead,
-    adminControls: ownership.adminControls,
-    data,
-    workflowStatus,
-    createdBy: req.user?._id,
-    createdByName: ownership.createdByName,
-    createdByEmail: ownership.createdByEmail,
-    createdByCrmUserId: ownership.createdByCrmUserId
-  });
-  client = await forcePersistClientYears(client) || client;
+  const { client, crmSync } = result;
   logClientYearDebug('create:saved', {
     clientId: client._id,
-    selectedLead,
+    selectedLead: client.selectedLead,
     workflowStatus: client.workflowStatus,
     data: client.data || {},
     onboardingYear: client.onboardingYear,
     firstAnnualReturnYear: client.firstAnnualReturnYear
   });
-  const pendingApproval = await upsertClientPendingApproval(client, readUserName(req.user));
-  const crmSync = pendingApproval
-    ? await syncPendingApprovalToCrm(pendingApproval, { action: 'upsert' })
-    : { skipped: true, reason: 'Pending approval record not created' };
+  await auditQuotation(client, req.user, 'quotation_created', 'Quotation created', 'Quotation created');
 
   await client.populate('adminControls.assignedTo', 'name email crmUserId role avatarUrl team teamId managerId operationHeadId');
-  res.status(201).json({ ok: true, client: normalizeClientOutput(client), crmSync });
+  res.status(201).json({ ok: true, client: normalizeClientOutput(client, req.user), crmSync });
 };
 
 async function createClientRecord(row, user) {
   const workflowStatus = row.workflowStatus === 'submitted' ? 'submitted' : 'draft';
   let data = applyRequestYearsToData(normalizeClientData(row.data || {}), row);
   const selectedLead = row.selectedLead || undefined;
-  const adminControls = createDefaultAdminControls(row.adminControls || {});
+  const importMeta = data.importMeta || {};
+  const requestedAdminControls = {
+    ...(row.adminControls || {}),
+    assignedToText: row.adminControls?.assignedToText || importMeta.assignedTo || importMeta.assignedToText || '',
+    assignedToEmail: row.adminControls?.assignedToEmail || importMeta.assignedToEmail || '',
+    assignedToCrmUserId: row.adminControls?.assignedToCrmUserId || importMeta.assignedToCrmUserId || ''
+  };
+  const adminControls = (isAdmin(user) || !user)
+    ? normalizeAdminControls(requestedAdminControls, { approvalStatus: 'PENDING', visibilityStatus: 'LIVE' })
+    : createDefaultAdminControls(requestedAdminControls);
   const ownership = await enrichClientOwnership({
     adminControls,
     createdByName: row.createdByName,
@@ -448,16 +501,27 @@ async function createClientRecord(row, user) {
     throw error;
   }
 
-  let client = await Client.create({
-    selectedLead,
-    adminControls: ownership.adminControls,
-    data,
-    workflowStatus,
-    createdBy: user?._id,
-    createdByName: ownership.createdByName,
-    createdByEmail: ownership.createdByEmail,
-    createdByCrmUserId: ownership.createdByCrmUserId
-  });
+  const identity = clientIntegrationIdentity(row, data);
+  let client = await Client.findOne(identity.query);
+  if (!client) {
+    try {
+      client = await Client.create({
+        integrationKey: identity.key,
+        selectedLead,
+        adminControls: ownership.adminControls,
+        data,
+        workflowStatus,
+        createdBy: user?._id,
+        createdByName: ownership.createdByName,
+        createdByEmail: ownership.createdByEmail,
+        createdByCrmUserId: ownership.createdByCrmUserId
+      });
+    } catch (err) {
+      if (err?.code !== 11000) throw err;
+      client = await Client.findOne({ $or: [identity.query, { integrationKey: identity.key }] });
+      if (!client) throw err;
+    }
+  }
   client = await forcePersistClientYears(client) || client;
   const pendingApproval = await upsertClientPendingApproval(client, readUserName(user));
   const crmSync = pendingApproval
@@ -469,6 +533,8 @@ async function createClientRecord(row, user) {
 exports.bulkCreateClients = async (req, res) => {
   const rows = Array.isArray(req.body.clients) ? req.body.clients : [];
   if (!rows.length) return res.status(400).json({ error: 'No clients provided' });
+  if (req.baseUrl === '/api/clients' && rows.length > 25) return res.status(400).json({ error: 'A maximum of 25 clients is allowed per batch' });
+  const includeRecords = req.body.includeRecords === true;
 
   const clients = [];
   const failures = [];
@@ -476,8 +542,10 @@ exports.bulkCreateClients = async (req, res) => {
   for (let index = 0; index < rows.length; index += 1) {
     try {
       const { client, crmSync } = await createClientRecord(rows[index], req.user);
-      await client.populate('adminControls.assignedTo', 'name email crmUserId role avatarUrl team teamId managerId operationHeadId');
-      clients.push({ ...normalizeClientOutput(client), crmSync });
+      if (includeRecords) {
+        await client.populate('adminControls.assignedTo', 'name email crmUserId role avatarUrl team teamId managerId operationHeadId');
+        clients.push({ ...normalizeClientOutput(client, req.user), crmSync });
+      } else clients.push({ _id: client._id, integrationKey: client.integrationKey, crmSync });
     } catch (err) {
       failures.push({
         row: index + 1,
@@ -486,12 +554,15 @@ exports.bulkCreateClients = async (req, res) => {
     }
   }
 
+  const expectedTotal = Number(req.body.expectedTotal || 0);
+  const storedTotal = expectedTotal > 0 ? await Client.countDocuments({}) : undefined;
   res.status(failures.length && !clients.length ? 400 : 201).json({
-    ok: failures.length === 0,
+    ok: true,
     imported: clients.length,
     failed: failures.length,
     clients,
-    failures
+    failures,
+    reconciliation: expectedTotal > 0 ? { expectedTotal, storedTotal, complete: storedTotal >= expectedTotal } : undefined
   });
 };
 
@@ -512,9 +583,21 @@ exports.updateClient = async (req, res) => {
     return res.status(400).json({ error: 'Client Legal Name is required before submit' });
   }
 
-  let client = await Client.findById(req.params.id);
+  const requestedId = String(req.params.id || '').trim();
+  let client = mongoose.Types.ObjectId.isValid(requestedId) ? await Client.findById(requestedId) : null;
+  if (!client) {
+    client = await Client.findOne({
+      $or: [
+        { 'data.importMeta.uniqueId': requestedId },
+        { 'data.importMeta.ccpClientId': requestedId }
+      ]
+    });
+  }
   if (!client) return res.status(404).json({ error: 'Client not found' });
-  const adminControls = normalizeAdminControls(req.body.adminControls || {}, client.adminControls || {});
+  const previousApprovalStatus = client.adminControls?.approvalStatus;
+  const adminControls = isAdmin(req.user)
+    ? normalizeAdminControls(req.body.adminControls || {}, client.adminControls || {})
+    : normalizeAdminControls({}, client.adminControls || {});
   const ownership = await enrichClientOwnership({
     adminControls,
     createdByName: client.createdByName,
@@ -541,12 +624,18 @@ exports.updateClient = async (req, res) => {
     firstAnnualReturnYear: client.firstAnnualReturnYear
   });
   const pendingApproval = await upsertClientPendingApproval(client, readUserName(req.user));
+  await auditQuotation(client, req.user, 'quotation_updated', 'Quotation updated', 'Quotation details updated');
+  const nextApprovalStatus = client.adminControls?.approvalStatus;
+  if (nextApprovalStatus && nextApprovalStatus !== previousApprovalStatus) {
+    const approvalType = nextApprovalStatus === 'APPROVED' ? 'quotation_approved' : nextApprovalStatus === 'REJECTED' ? 'quotation_rejected' : 'approval_pending';
+    await auditQuotation(client, req.user, approvalType, nextApprovalStatus === 'PENDING' ? 'Quotation approval requested' : `Quotation ${nextApprovalStatus.toLowerCase()}`, `Quotation status changed from ${previousApprovalStatus || 'Not set'} to ${nextApprovalStatus}`, { oldValue: previousApprovalStatus || '', newValue: nextApprovalStatus });
+  }
   const crmSync = pendingApproval
     ? await syncPendingApprovalToCrm(pendingApproval, { action: 'upsert' })
     : { skipped: true, reason: 'Pending approval record not created' };
 
   await client.populate('adminControls.assignedTo', 'name email crmUserId role avatarUrl team teamId managerId operationHeadId');
-  res.json({ ok: true, client: normalizeClientOutput(client), crmSync });
+  res.json({ ok: true, client: normalizeClientOutput(client, req.user), crmSync });
 };
 
 exports.updateClientYears = async (req, res) => {
@@ -620,7 +709,7 @@ exports.updateClientYears = async (req, res) => {
 
   res.json({
     ok: true,
-    client: normalizeClientOutput(client),
+    client: normalizeClientOutput(client, req.user),
     yearPatch: {
       requestedClientId: req.params.id,
       relatedClientIds: relatedIds.map((id) => String(id)),
@@ -633,6 +722,194 @@ exports.updateClientYears = async (req, res) => {
   });
 };
 
+function normalizeBulkClientIdentity(value) {
+  return String(value || '').trim().replace(/^lead\s*number\s*:\s*/i, '').trim();
+}
+
+function normalizeFinancialYear(value) {
+  const raw = String(value || '').trim().replace(/[–—]/g, '-');
+  const match = raw.match(/^(\d{4})\s*-\s*(\d{2}|\d{4})$/);
+  if (!match) return '';
+  const start = Number(match[1]);
+  const end = Number(match[2].length === 2 ? `${String(start).slice(0, 2)}${match[2]}` : match[2]);
+  return end === start + 1 ? `${start}-${String(end).slice(-2)}` : '';
+}
+
+exports.bulkUpdateClientYears = async (req, res) => {
+  const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+  if (!rows.length) return res.status(400).json({ error: 'No annual return year rows provided' });
+
+  const prepared = rows.map((row, index) => ({
+    row: Number(row.row) || index + 2,
+    identity: normalizeBulkClientIdentity(row.companyUniqueId || row.uniqueId || row.leadNumber),
+    onboardingYear: normalizeFinancialYear(row.onboardingYear),
+    firstAnnualReturnYear: normalizeFinancialYear(row.firstAnnualReturnYear)
+  }));
+  const identities = [...new Set(prepared.map((row) => row.identity).filter(Boolean))];
+  const leads = await Lead.find({ leadCode: { $in: identities } }).select('_id leadCode').lean();
+  const leadIdByCode = new Map(leads.map((lead) => [String(lead.leadCode).toUpperCase(), lead._id]));
+  const clients = await Client.find({
+    $or: [
+      { selectedLead: { $in: leads.map((lead) => lead._id) } },
+      { 'data.importMeta.leadNumber': { $in: identities } },
+      { 'data.importMeta.uniqueId': { $in: identities } },
+      { 'data.importMeta.ccpClientId': { $in: identities } }
+    ]
+  }).select('_id selectedLead data.importMeta').lean();
+  const clientByIdentity = new Map();
+  clients.forEach((client) => {
+    const meta = client.data?.importMeta || {};
+    [meta.leadNumber, meta.uniqueId, meta.ccpClientId].filter(Boolean).forEach((key) => clientByIdentity.set(String(key).trim().toUpperCase(), client));
+    const lead = leads.find((item) => String(item._id) === String(client.selectedLead));
+    if (lead?.leadCode) clientByIdentity.set(String(lead.leadCode).toUpperCase(), client);
+  });
+
+  const operations = [];
+  const failures = [];
+  const skipped = [];
+  const updatedRows = [];
+  prepared.forEach((row) => {
+    if (!row.identity) return failures.push({ row: row.row, error: 'Company Unique ID is required' });
+    if (!row.onboardingYear && !row.firstAnnualReturnYear) {
+      return skipped.push({ row: row.row, reason: 'No valid year supplied; existing values were preserved' });
+    }
+    const client = clientByIdentity.get(row.identity.toUpperCase());
+    if (!client) return failures.push({ row: row.row, error: `Client not found for ${row.identity}` });
+    const fields = {};
+    if (row.onboardingYear) {
+      fields.onboardingYear = row.onboardingYear;
+      fields['data.basic.onboardingYear'] = row.onboardingYear;
+    }
+    if (row.firstAnnualReturnYear) {
+      fields.firstAnnualReturnYear = row.firstAnnualReturnYear;
+      fields['data.basic.firstAnnualReturnYear'] = row.firstAnnualReturnYear;
+    }
+    operations.push({
+      updateOne: {
+        filter: { _id: client._id },
+        update: { $set: fields }
+      }
+    });
+    updatedRows.push({ row: row.row, clientId: String(client._id), companyUniqueId: row.identity });
+  });
+  if (operations.length) await Client.bulkWrite(operations, { ordered: false });
+
+  return res.status(failures.length && !operations.length ? 400 : 200).json({
+    ok: failures.length === 0,
+    updated: operations.length,
+    failed: failures.length,
+    skipped: skipped.length,
+    rows: updatedRows,
+    failures,
+    skippedRows: skipped
+  });
+};
+
+async function findClientByKey(value) {
+  const key = String(value || '').trim();
+  if (mongoose.Types.ObjectId.isValid(key)) {
+    const byId = await Client.findById(key);
+    if (byId) return byId;
+  }
+  return Client.findOne({ $or: [
+    { integrationKey: key },
+    { 'data.importMeta.uniqueId': key },
+    { 'data.importMeta.leadNumber': key },
+    { 'data.importMeta.ccpClientId': key }
+  ] });
+}
+
+function validatePurchaseOrderConfirmation(input) {
+  const po = stripDangerousKeys(input || {});
+  if (!['yes', 'no'].includes(po.mode)) return 'Please select Yes or No for PO Received.';
+  if (po.mode === 'no') {
+    if (!(Array.isArray(po.approvalFiles) && po.approvalFiles.length) && !String(po.approvalNote || '').trim()) {
+      return 'Upload special approval proof or enter the approval email/note.';
+    }
+    return '';
+  }
+  if (!Array.isArray(po.rows) || !po.rows.length) return 'Add at least one purchase order year.';
+  const years = new Set();
+  for (const row of po.rows) {
+    const year = normalizeFinancialYear(row?.fyYear);
+    if (!year || !String(row?.poNumber || '').trim() || !row?.file?.name || !row?.file?.url || !Array.isArray(row?.service) || !row.service.length) {
+      return 'Every PO row requires FY Year, PO Number, PO Upload, and at least one Service.';
+    }
+    if (years.has(year)) return `Duplicate FY Year ${year} is not allowed.`;
+    years.add(year);
+  }
+  return '';
+}
+
+function annualYearUnlocked(annualReturn, annualYear) {
+  const filings = annualReturn?.filings || {};
+  const direct = filings[annualYear]?.draft?.purchaseOrderConfirmation;
+  const confirmations = [direct, ...Object.values(filings).map((filing) => filing?.draft?.purchaseOrderConfirmation)].filter(Boolean);
+  if (confirmations.some((po) => po.mode === 'no' && po.confirmed && ((po.approvalFiles || []).length || String(po.approvalNote || '').trim()))) return true;
+  return confirmations.some((po) => po.mode === 'yes' && po.confirmed && (po.rows || []).some((row) => row.fyYear === annualYear));
+}
+
+exports.getAnnualReturn = async (req, res) => {
+  const client = await findClientByKey(req.params.id);
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+  const canonical = await AnnualReturn.findOne({ client: client._id }).lean();
+  const legacy = client.data?.annualReturn || {};
+  const annualReturn = canonical || { client: client._id, ...legacy, filings: legacy.filings || {} };
+  return res.json({ ok: true, client: normalizeClientOutput(client, req.user), annualReturn });
+};
+
+exports.saveAnnualReturn = async (req, res) => {
+  const client = await findClientByKey(req.params.id);
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+  const annualYear = normalizeFinancialYear(req.body?.annualYear);
+  if (!annualYear) return res.status(400).json({ error: 'A valid annualYear is required' });
+  const incomingDraft = stripDangerousKeys(req.body?.draft || {});
+  if (incomingDraft.purchaseOrderConfirmation) {
+    const validationError = validatePurchaseOrderConfirmation(incomingDraft.purchaseOrderConfirmation);
+    if (validationError) return res.status(400).json({ error: validationError });
+    incomingDraft.purchaseOrderConfirmation = {
+      ...incomingDraft.purchaseOrderConfirmation,
+      confirmed: true,
+      savedAt: new Date(),
+      savedBy: req.user._id
+    };
+  }
+  const existingAnnual = client.data?.annualReturn || {};
+  const existingFiling = existingAnnual.filings?.[annualYear] || {};
+  const filing = {
+    ...existingFiling,
+    activeTab: req.body.activeTab || existingFiling.activeTab || 'basic',
+    activeSection: req.body.activeSection || existingFiling.activeSection || '',
+    status: req.body.status || existingFiling.status || 'draft',
+    draft: { ...(existingFiling.draft || {}), ...incomingDraft },
+    updatedAt: new Date(),
+    updatedBy: req.user._id
+  };
+  const filings = { ...(existingAnnual.filings || {}), [annualYear]: filing };
+  client.data = { ...(client.data || {}), annualReturn: { ...existingAnnual, filings } };
+  client.markModified('data');
+  await client.save();
+
+  const canonical = await AnnualReturn.findOneAndUpdate(
+    { client: client._id },
+    { $set: { [`filings.${annualYear}`]: filing, updatedBy: req.user._id }, $setOnInsert: { client: client._id } },
+    { new: true, upsert: true, runValidators: true }
+  );
+  return res.json({ ok: true, filing, annualReturn: canonical });
+};
+
+exports.getAnnualYearAccess = async (req, res) => {
+  const client = await findClientByKey(req.params.id);
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+  const annualYear = normalizeFinancialYear(req.params.annualYear);
+  if (!annualYear) return res.status(400).json({ error: 'Invalid annual year' });
+  const canonical = await AnnualReturn.findOne({ client: client._id }).lean();
+  const source = canonical || client.data?.annualReturn || {};
+  const unlocked = annualYearUnlocked(source, annualYear);
+  return res.status(unlocked ? 200 : 403).json({ ok: unlocked, unlocked, error: unlocked ? undefined : 'Frozen — PO details pending' });
+};
+
 exports.backfillApprovalStatus = backfillApprovalStatus;
 exports.normalizeApprovalStatus = normalizeApprovalStatus;
 exports.normalizeClientOutput = normalizeClientOutput;
+exports._test = { normalizedClientBusinessKey, clientIntegrationIdentity, enrichClientOwnership, normalizeClientData, applyRequestYearsToData, normalizeBulkClientIdentity, normalizeFinancialYear, validatePurchaseOrderConfirmation, annualYearUnlocked, stripDangerousKeys };

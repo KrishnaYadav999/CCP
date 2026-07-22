@@ -16,13 +16,21 @@ const currentYear = new Date().getFullYear();
 const yearOptions = Array.from({ length: 8 }, (_, i) => `${currentYear - 2 + i}-${String(currentYear - 1 + i).slice(-2)}`);
 const serviceOptions = ['Consultancy Fee', 'Registration', 'Annual Return', 'Compliance Audit', 'EPR Advisory'];
 const eprOptions = ['EPR - Plastic Waste', 'EPR - E-Waste', 'EPR - Battery Waste', 'EPR - Tyre Waste', 'EPR - Used Oil Waste'];
-const piboOptions = ['Producer', 'Importer', 'Brand Owner', 'Recycler', 'PWP', 'Refurbisher'];
+const piboParents = ['PIBO', 'SIMP', 'PWP'];
+const piboOptions = [
+  { parent: 'PIBO', name: 'Producer' }, { parent: 'PIBO', name: 'Brand Owner' }, { parent: 'PIBO', name: 'Importer' },
+  { parent: 'SIMP', name: 'Producer (Small & Micro)' }, { parent: 'SIMP', name: 'Importer of Raw Material' },
+  { parent: 'SIMP', name: 'Manufacturer of Raw Material' }, { parent: 'SIMP', name: 'Seller' },
+  { parent: 'PWP', name: 'Recycler' }, { parent: 'PWP', name: 'Waste to Energy' },
+  { parent: 'PWP', name: 'Waste to Oil' }, { parent: 'PWP', name: 'Cement Co-processing' }
+];
 const emptyItem = { serviceCategory: '', servicesForYear: '', eprCategory: '', piboCategory: '', unit: 1, basicAmount: '' };
 
 const autoFields = [
   ['referredBy', 'Referred By'], ['salutation', 'Salutation'], ['contactPerson', 'Contact Person'], ['designation', 'Designation'],
   ['mobileNo1', 'Mobile No. 1'], ['mobileNo2', 'Mobile No. 2'], ['company', 'Company Name'], ['addressLine1', 'Address Line 1'],
-  ['addressLine2', 'Address Line 2'], ['addressLine3', 'Address Line 3'], ['state', 'State'], ['city', 'City'], ['pinCode', 'Pincode']
+  ['addressLine2', 'Address Line 2'], ['addressLine3', 'Address Line 3'], ['state', 'State'], ['city', 'City'], ['pinCode', 'Pincode'],
+  ['gstNumber', 'GST Number']
 ];
 
 const inr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
@@ -58,6 +66,8 @@ export default function CreateQuotation() {
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [bulkImporting, setBulkImporting] = useState(false);
+  const [customPiboCategories, setCustomPiboCategories] = useState([]);
+  const [customServiceCategories, setCustomServiceCategories] = useState([]);
   const bulkInputRef = useRef(null);
 
   useEffect(() => { loadPage(); }, []);
@@ -74,12 +84,17 @@ export default function CreateQuotation() {
   async function loadPage() {
     setLoading(true);
     try {
-      const [me, leadResponse, clientResponse] = await Promise.all([
-        apiService.auth.getMe(), apiService.leads.getList(), apiService.clients.getList()
+      const [me, leadResponse, clientResponse, piboResponse, serviceResponse] = await Promise.all([
+        apiService.auth.getMe(), apiService.leads.getList(), apiService.clients.getList(), apiService.quotations.getPiboCategories(), apiService.quotations.getServiceCategories()
       ]);
       setCurrentUser(me.data.user);
       setLeads(leadResponse.data.leads || []);
       setClients(clientResponse.data.clients || []);
+      setCustomPiboCategories(piboResponse.data.categories || []);
+      setCustomServiceCategories(serviceResponse.data.categories || []);
+      serviceResponse.data.categories?.forEach((category) => {
+        if (!serviceOptions.includes(category)) serviceOptions.push(category);
+      });
     } catch (err) {
       if (err?.response?.status === 401) navigate('/', { replace: true });
       else setError(getApiErrorMessage(err, 'Unable to load quotation details'));
@@ -123,6 +138,36 @@ export default function CreateQuotation() {
   function duplicateItem(item) { setItems((current) => [...current, { ...item, id: id(), editing: true }]); }
   function addTerm() { setTerms((current) => [...current, { id: id(), text: '' }]); }
 
+  async function addPiboCategory(name, parent = 'PIBO') {
+    const cleanName = String(name || '').trim().replace(/\s+/g, ' ');
+    if (!cleanName) return '';
+    try {
+      const response = await apiService.quotations.createPiboCategory(cleanName, parent);
+      const savedCategory = response.data.category || { name: cleanName, parent };
+      setCustomPiboCategories((current) => [...current.filter((item) => !(item.parent === savedCategory.parent && item.name === savedCategory.name)), savedCategory]);
+      setNotice(`${savedCategory.parent} category “${savedCategory.name}” saved for future quotations.`);
+      return savedCategory;
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Unable to save PIBO category'));
+      return '';
+    }
+  }
+
+  async function addServiceCategory(name) {
+    const cleanName = String(name || '').trim().replace(/\s+/g, ' ');
+    if (!cleanName) return '';
+    try {
+      const response = await apiService.quotations.createServiceCategory(cleanName);
+      const savedName = response.data.category || cleanName;
+      setCustomServiceCategories((current) => [...new Set([...current, savedName])].sort((a, b) => a.localeCompare(b)));
+      setNotice(`Service category “${savedName}” saved for future quotations.`);
+      return savedName;
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Unable to save service category'));
+      return '';
+    }
+  }
+
   function validate() {
     const next = {};
     if (!leadId) next.leadId = 'Please select a lead.';
@@ -164,11 +209,46 @@ export default function CreateQuotation() {
         });
       });
 
+      const workingLeads = [...leads];
+      const createdLeads = [];
+      const leadCreationFailures = [];
+      for (const group of grouped.values()) {
+        const companyKey = normalizeCompany(group.company);
+        if (workingLeads.some((entry) => normalizeCompany(entry.company) === companyKey)) continue;
+        const sourceLeadRow = String(group.source['Lead Row'] || '').trim();
+        if (!sourceLeadRow) continue;
+        try {
+          const source = group.source;
+          const response = await apiService.leads.create({
+            sourceLeadId: `QUOTATION-XLSX-${sourceLeadRow}`,
+            company: group.company,
+            salutation: String(source.Salutation || '').trim(),
+            contactPerson: String(source['Contact Person'] || '').trim(),
+            designation: String(source.Designation || '').trim(),
+            addressLine1: String(source['Address Line 1'] || '').trim(),
+            addressLine2: String(source['Address Line 2'] || '').trim(),
+            addressLine3: String(source['Address Line 3'] || '').trim(),
+            city: String(source.City || '').trim(),
+            state: String(source.State || '').trim(),
+            pinCode: String(source.Pincode || '').trim(),
+            referredBy: String(source['Referred By'] || '').trim(),
+            source: 'Quotation Excel Import',
+            workflowStatus: 'draft'
+          });
+          const savedLead = response.data.lead;
+          workingLeads.push(savedLead);
+          createdLeads.push(savedLead);
+        } catch (leadError) {
+          leadCreationFailures.push(`${group.company} (row ${group.rowIndex}): ${getApiErrorMessage(leadError, 'Unable to create CCP lead')}`);
+        }
+      }
+      if (createdLeads.length) setLeads(workingLeads);
+
       const byLead = new Map();
       const unmatched = [];
       grouped.forEach((group) => {
         const companyKey = normalizeCompany(group.company);
-        const lead = leads.find((entry) => normalizeCompany(entry.company) === companyKey);
+        const lead = workingLeads.find((entry) => normalizeCompany(entry.company) === companyKey);
         if (!lead) { unmatched.push(`${group.company} (row ${group.rowIndex})`); return; }
         const leadKey = String(lead._id || lead.id);
         const source = group.source;
@@ -196,6 +276,7 @@ export default function CreateQuotation() {
       if (!quotationRecords.length) throw new Error(`No company names matched existing leads.${unmatched.length ? ` First unmatched: ${unmatched[0]}` : ''}`);
       const quotationResponse = await apiService.quotations.bulkUpsert(quotationRecords);
       let imported = Number(quotationResponse.data.imported || 0);
+      const failed = Number(quotationResponse.data.failed || 0);
       for (const { lead, quotations } of byLead.values()) {
         const leadKey = String(lead._id || lead.id);
         const existing = clients.find((client) => String(client.selectedLead?._id || client.selectedLead?.id || client.selectedLead) === leadKey);
@@ -222,7 +303,12 @@ export default function CreateQuotation() {
         else await apiService.clients.create(payload);
       }
       if (!imported) throw new Error(`No company names matched existing leads.${unmatched.length ? ` First unmatched: ${unmatched[0]}` : ''}`);
-      setNotice(`${imported} quotation${imported === 1 ? '' : 's'} imported and linked by company name.${unmatched.length ? ` ${unmatched.length} unmatched: ${unmatched.slice(0, 3).join(', ')}${unmatched.length > 3 ? '…' : ''}` : ''}`);
+      setNotice([
+        `${imported} imported`, `${failed} failed`, `${unmatched.length} unmatched`,
+        `${createdLeads.length} missing CCP lead${createdLeads.length === 1 ? '' : 's'} created`,
+        unmatched.length ? `Unmatched: ${unmatched.slice(0, 3).join(', ')}` : '',
+        leadCreationFailures.length ? `Lead creation failed: ${leadCreationFailures.slice(0, 2).join(', ')}` : ''
+      ].filter(Boolean).join('. '));
       await loadPage();
     } catch (err) { setError(getApiErrorMessage(err, err.message || 'Unable to import quotation Excel')); }
     finally { setBulkImporting(false); }
@@ -299,7 +385,7 @@ export default function CreateQuotation() {
           </Section>
 
           <Section icon={ClipboardList} title="Quotation Items" subtitle="Add services and commercial details to this quotation" action={<><span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-black text-teal-700">{items.length} {items.length === 1 ? 'item' : 'items'}</span><button onClick={addItem} className="btn-lift inline-flex h-10 items-center gap-2 rounded-xl bg-teal-700 px-4 text-sm font-black text-white"><Plus className="h-4 w-4" />Add Item</button></>}>
-            {!items.length ? <EmptyItems onAdd={addItem} /> : <ItemsEditor items={items} errors={errors} updateItem={updateItem} saveItem={saveItem} setItems={setItems} duplicateItem={duplicateItem} removeItem={removeItem} />}
+            {!items.length ? <EmptyItems onAdd={addItem} /> : <ItemsEditor items={items} errors={errors} updateItem={updateItem} saveItem={saveItem} setItems={setItems} duplicateItem={duplicateItem} removeItem={removeItem} serviceCategories={[...new Set([...serviceOptions, ...customServiceCategories])]} addServiceCategory={addServiceCategory} piboCategories={[...new Set([...piboOptions, ...customPiboCategories])]} addPiboCategory={addPiboCategory} />}
             {errors.items && <ErrorText>{errors.items}</ErrorText>}
             <div className="ml-auto mt-5 w-full max-w-sm overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
               <div className="flex justify-between px-4 py-3 text-sm font-bold text-slate-600"><span>Subtotal</span><span>{inr.format(subtotal)}</span></div>
@@ -337,10 +423,58 @@ function ReadOnlyField({ label, value }) { return <label className="min-w-0"><sp
 function ErrorText({ children }) { return <p className="mt-1.5 text-xs font-bold text-red-600">{children}</p>; }
 function EmptyItems({ onAdd }) { return <div className="grid min-h-56 place-items-center rounded-xl border border-dashed border-slate-200 bg-slate-50/70 p-6 text-center"><div><span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-teal-50 text-teal-700"><PackageOpen className="h-7 w-7" /></span><p className="mt-4 font-black text-slate-900">No quotation items added</p><p className="mt-1 text-sm font-semibold text-slate-500">Add services and pricing details to build this quotation.</p><button onClick={onAdd} className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl bg-teal-700 px-4 text-sm font-black text-white"><Plus className="h-4 w-4" />Add First Item</button></div></div>; }
 
-function ItemsEditor({ items, errors, updateItem, saveItem, setItems, duplicateItem, removeItem }) {
-  return <><div className="hidden overflow-x-auto rounded-xl border border-slate-200 lg:block"><table className="w-full min-w-[1180px] text-left"><thead className="bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-500"><tr>{['Sr.No', 'Service Category', 'Services for the Year', 'EPR Category', 'PIBO Category', 'Unit', 'Basic Amount (INR)', 'Line Total', 'Actions'].map((h) => <th key={h} className={`px-3 py-3 ${h === 'Actions' ? 'sticky right-0 bg-slate-50' : ''}`}>{h}</th>)}</tr></thead><tbody>{items.map((item, index) => <tr key={item.id} className="border-t border-slate-100"><td className="px-3 py-4 text-center font-black text-slate-500">{index + 1}</td><ItemCells item={item} updateItem={updateItem} /><td className="px-3 py-4 font-black text-slate-900">{inr.format((Number(item.unit) || 0) * (Number(item.basicAmount) || 0))}</td><td className="sticky right-0 bg-white px-3 py-4"><Actions item={item} saveItem={saveItem} setItems={setItems} duplicateItem={duplicateItem} removeItem={removeItem} /></td></tr>)}</tbody></table></div><div className="space-y-4 lg:hidden">{items.map((item, index) => <div key={item.id} className="rounded-xl border border-slate-200 p-4 shadow-sm"><div className="mb-4 flex items-center justify-between"><span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-black text-teal-700">Item {index + 1}</span><span className="font-black text-slate-900">{inr.format((Number(item.unit) || 0) * (Number(item.basicAmount) || 0))}</span></div><div className="grid gap-3 sm:grid-cols-2"><MobileField label="Service Category"><SelectInput disabled={!item.editing} value={item.serviceCategory} options={serviceOptions} onChange={(v) => updateItem(item.id, 'serviceCategory', v)} /></MobileField><MobileField label="Services for the Year"><SelectInput disabled={!item.editing} value={item.servicesForYear} options={yearOptions} onChange={(v) => updateItem(item.id, 'servicesForYear', v)} /></MobileField><MobileField label="EPR Category"><SelectInput disabled={!item.editing} value={item.eprCategory} options={eprOptions} onChange={(v) => updateItem(item.id, 'eprCategory', v)} /></MobileField><MobileField label="PIBO Category"><SelectInput disabled={!item.editing} value={item.piboCategory} options={piboOptions} onChange={(v) => updateItem(item.id, 'piboCategory', v)} /></MobileField><MobileField label="Unit"><input disabled={!item.editing} type="number" min="1" value={item.unit} onChange={(e) => updateItem(item.id, 'unit', e.target.value)} className="form-input !min-h-11" /></MobileField><MobileField label="Basic Amount (INR)"><div className="relative"><CircleIndianRupee className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input disabled={!item.editing} type="number" min="0" value={item.basicAmount} onChange={(e) => updateItem(item.id, 'basicAmount', e.target.value)} className="form-input !min-h-11 !pl-10" /></div></MobileField></div><div className="mt-4 flex justify-end border-t border-slate-100 pt-3"><Actions item={item} saveItem={saveItem} setItems={setItems} duplicateItem={duplicateItem} removeItem={removeItem} /></div>{errors[`item-${item.id}`] && <ErrorText>{errors[`item-${item.id}`]}</ErrorText>}</div>)}</div></>;
+function ItemsEditor({ items, errors, updateItem, saveItem, setItems, duplicateItem, removeItem, serviceCategories, addServiceCategory, piboCategories, addPiboCategory }) {
+  return <><div className="hidden overflow-x-auto rounded-xl border border-slate-200 lg:block"><table className="w-full min-w-[1180px] text-left"><thead className="bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-500"><tr>{['Sr.No', 'Service Category', 'Services for the Year', 'EPR Category', 'PIBO Category', 'Unit', 'Basic Amount (INR)', 'Line Total', 'Actions'].map((h) => <th key={h} className={`px-3 py-3 ${h === 'Actions' ? 'sticky right-0 bg-slate-50' : ''}`}>{h}</th>)}</tr></thead><tbody>{items.map((item, index) => <tr key={item.id} className="border-t border-slate-100"><td className="px-3 py-4 text-center font-black text-slate-500">{index + 1}</td><ItemCells item={item} updateItem={updateItem} piboCategories={piboCategories} addPiboCategory={addPiboCategory} /><td className="px-3 py-4 font-black text-slate-900">{inr.format((Number(item.unit) || 0) * (Number(item.basicAmount) || 0))}</td><td className="sticky right-0 bg-white px-3 py-4"><Actions item={item} saveItem={saveItem} setItems={setItems} duplicateItem={duplicateItem} removeItem={removeItem} /></td></tr>)}</tbody></table></div><div className="space-y-4 lg:hidden">{items.map((item, index) => <div key={item.id} className="rounded-xl border border-slate-200 p-4 shadow-sm"><div className="mb-4 flex items-center justify-between"><span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-black text-teal-700">Item {index + 1}</span><span className="font-black text-slate-900">{inr.format((Number(item.unit) || 0) * (Number(item.basicAmount) || 0))}</span></div><div className="grid gap-3 sm:grid-cols-2"><MobileField label="Service Category"><SelectInput disabled={!item.editing} value={item.serviceCategory} options={serviceOptions} onChange={(v) => updateItem(item.id, 'serviceCategory', v)} /></MobileField><MobileField label="Services for the Year"><SelectInput disabled={!item.editing} value={item.servicesForYear} options={yearOptions} onChange={(v) => updateItem(item.id, 'servicesForYear', v)} /></MobileField><MobileField label="EPR Category"><SelectInput disabled={!item.editing} value={item.eprCategory} options={eprOptions} onChange={(v) => updateItem(item.id, 'eprCategory', v)} /></MobileField><MobileField label="PIBO Category"><SelectInput disabled={!item.editing} value={item.piboCategory} options={piboCategories} onChange={(v) => updateItem(item.id, 'piboCategory', v)} onAdd={addPiboCategory} /></MobileField><MobileField label="Unit"><input disabled={!item.editing} type="number" min="1" value={item.unit} onChange={(e) => updateItem(item.id, 'unit', e.target.value)} className="form-input !min-h-11" /></MobileField><MobileField label="Basic Amount (INR)"><div className="relative"><CircleIndianRupee className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input disabled={!item.editing} type="number" min="0" value={item.basicAmount} onChange={(e) => updateItem(item.id, 'basicAmount', e.target.value)} className="form-input !min-h-11 !pl-10" /></div></MobileField></div><div className="mt-4 flex justify-end border-t border-slate-100 pt-3"><Actions item={item} saveItem={saveItem} setItems={setItems} duplicateItem={duplicateItem} removeItem={removeItem} /></div>{errors[`item-${item.id}`] && <ErrorText>{errors[`item-${item.id}`]}</ErrorText>}</div>)}</div></>;
 }
-function ItemCells({ item, updateItem }) { return <><td className="px-2 py-3"><SelectInput disabled={!item.editing} value={item.serviceCategory} options={serviceOptions} onChange={(v) => updateItem(item.id, 'serviceCategory', v)} /></td><td className="px-2 py-3"><SelectInput disabled={!item.editing} value={item.servicesForYear} options={yearOptions} onChange={(v) => updateItem(item.id, 'servicesForYear', v)} /></td><td className="px-2 py-3"><SelectInput disabled={!item.editing} value={item.eprCategory} options={eprOptions} onChange={(v) => updateItem(item.id, 'eprCategory', v)} /></td><td className="px-2 py-3"><SelectInput disabled={!item.editing} value={item.piboCategory} options={piboOptions} onChange={(v) => updateItem(item.id, 'piboCategory', v)} /></td><td className="px-2 py-3"><input disabled={!item.editing} type="number" min="1" value={item.unit} onChange={(e) => updateItem(item.id, 'unit', e.target.value)} className="h-11 w-20 rounded-lg border border-slate-200 px-3 font-bold outline-none focus:border-teal-400 disabled:bg-slate-50" /></td><td className="px-2 py-3"><div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 font-black text-slate-500">₹</span><input disabled={!item.editing} type="number" min="0" value={item.basicAmount} onChange={(e) => updateItem(item.id, 'basicAmount', e.target.value)} className="h-11 w-36 rounded-lg border border-slate-200 pl-8 pr-3 font-bold outline-none focus:border-teal-400 disabled:bg-slate-50" /></div></td></>; }
-function SelectInput({ value, options, onChange, disabled }) { return <select disabled={disabled} value={value} onChange={(e) => onChange(e.target.value)} className="h-11 w-full min-w-36 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 outline-none focus:border-teal-400 disabled:bg-slate-50"><option value="">Select option</option>{options.map((option) => <option key={option}>{option}</option>)}</select>; }
+function ItemCells({ item, updateItem, piboCategories, addPiboCategory }) { return <><td className="px-2 py-3"><SelectInput disabled={!item.editing} value={item.serviceCategory} options={serviceOptions} onChange={(v) => updateItem(item.id, 'serviceCategory', v)} /></td><td className="px-2 py-3"><SelectInput disabled={!item.editing} value={item.servicesForYear} options={yearOptions} onChange={(v) => updateItem(item.id, 'servicesForYear', v)} /></td><td className="px-2 py-3"><SelectInput disabled={!item.editing} value={item.eprCategory} options={eprOptions} onChange={(v) => updateItem(item.id, 'eprCategory', v)} /></td><td className="px-2 py-3"><SelectInput disabled={!item.editing} value={item.piboCategory} options={piboCategories} onChange={(v) => updateItem(item.id, 'piboCategory', v)} onAdd={addPiboCategory} /></td><td className="px-2 py-3"><input disabled={!item.editing} type="number" min="1" value={item.unit} onChange={(e) => updateItem(item.id, 'unit', e.target.value)} className="h-11 w-20 rounded-lg border border-slate-200 px-3 font-bold outline-none focus:border-teal-400 disabled:bg-slate-50" /></td><td className="px-2 py-3"><div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 font-black text-slate-500">₹</span><input disabled={!item.editing} type="number" min="0" value={item.basicAmount} onChange={(e) => updateItem(item.id, 'basicAmount', e.target.value)} className="h-11 w-36 rounded-lg border border-slate-200 pl-8 pr-3 font-bold outline-none focus:border-teal-400 disabled:bg-slate-50" /></div></td></>; }
+function SelectInput({ value, options, onChange, disabled, onAdd }) {
+  if (onAdd) {
+    const legacyChild = typeof value === 'string' ? value : '';
+    const matchedLegacy = options.find((option) => option.name === legacyChild);
+    const parent = value?.parent || matchedLegacy?.parent || '';
+    const child = value?.child || legacyChild;
+    const children = options.filter((option) => option.parent === parent);
+    async function handleChildChange(event) {
+      if (event.target.value !== '__add_new__') return onChange({ parent, child: event.target.value });
+      const name = window.prompt(`Enter a new child category under ${parent}:`);
+      if (!name) return;
+      const saved = await onAdd(name, parent);
+      if (saved) onChange({ parent: saved.parent, child: saved.name });
+    }
+    return <div className="grid min-w-44 gap-2">
+      <select disabled={disabled} value={parent} onChange={(event) => onChange({ parent: event.target.value, child: '' })} className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 outline-none focus:border-teal-400 disabled:bg-slate-50">
+        <option value="">Select PIBO / SIMP / PWP</option>
+        {piboParents.map((option) => <option key={option} value={option}>{option}</option>)}
+      </select>
+      {parent && <select disabled={disabled} value={child} onChange={handleChildChange} className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 outline-none focus:border-teal-400 disabled:bg-slate-50">
+        <option value="">Select {parent} category</option>
+        {children.map((option) => <option key={`${option.parent}-${option.name}`} value={option.name}>{option.name}</option>)}
+        <option value="__add_new__">＋ Add New {parent} Category</option>
+      </select>}
+    </div>;
+  }
+  const isServiceCategory = options === serviceOptions;
+  const addCategory = onAdd || (isServiceCategory ? async (name) => {
+    try {
+      const response = await apiService.quotations.createServiceCategory(name);
+      const savedName = response.data.category || String(name).trim();
+      if (!serviceOptions.includes(savedName)) serviceOptions.push(savedName);
+      return savedName;
+    } catch (error) {
+      window.alert(getApiErrorMessage(error, 'Unable to save service category'));
+      return '';
+    }
+  } : null);
+  const categoryLabel = isServiceCategory ? 'Service Category' : 'PIBO Category';
+  async function handleChange(event) {
+    if (event.target.value !== '__add_new__') return onChange(event.target.value);
+    const name = window.prompt(`Enter new ${categoryLabel} name:`);
+    if (!name) return;
+    const savedName = await addCategory(name);
+    if (savedName) onChange(savedName);
+  }
+  const available = value && !options.includes(value) ? [value, ...options] : options;
+  return <select disabled={disabled} value={value} onChange={handleChange} className="h-11 w-full min-w-36 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 outline-none focus:border-teal-400 disabled:bg-slate-50"><option value="">Select option</option>{available.map((option) => <option key={option}>{option}</option>)}{addCategory && <option value="__add_new__">＋ Add New {categoryLabel}</option>}</select>;
+}
 function Actions({ item, saveItem, setItems, duplicateItem, removeItem }) { return <div className="flex items-center gap-1">{item.editing ? <button onClick={() => saveItem(item.id)} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-teal-700 px-3 text-xs font-black text-white" title="Save row"><Save className="h-4 w-4" />Save</button> : <button onClick={() => setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, editing: true } : entry))} className="grid h-9 w-9 place-items-center rounded-lg text-teal-700 hover:bg-teal-50" title="Edit row"><Pencil className="h-4 w-4" /></button>}<button onClick={() => duplicateItem(item)} className="grid h-9 w-9 place-items-center rounded-lg text-slate-600 hover:bg-slate-100" title="Duplicate row"><Copy className="h-4 w-4" /></button><button onClick={() => removeItem(item.id)} className="grid h-9 w-9 place-items-center rounded-lg text-red-500 hover:bg-red-50" title="Delete row"><Trash2 className="h-4 w-4" /></button></div>; }
 function MobileField({ label, children }) { return <label><span className="mb-1.5 block text-xs font-black text-slate-500">{label}</span>{children}</label>; }

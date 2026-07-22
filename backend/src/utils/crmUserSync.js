@@ -84,7 +84,7 @@ function buildPayload(action, user, password) {
     source: 'ccp'
   };
 
-  if (action === 'create' && password && String(password).length >= 8) {
+  if (password && String(password).length >= 8) {
     payload.password = password;
   }
   return payload;

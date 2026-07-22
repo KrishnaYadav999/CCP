@@ -6,6 +6,8 @@ const apiEndpoints = {
     requestOtp: '/auth/request-otp',
     resendOtp: '/auth/resend-otp',
     verifyOtp: '/auth/verify-otp',
+    forgotPassword: '/auth/forgot-password',
+    resetPassword: '/auth/reset-password',
     users: '/auth/users',
     adminUsers: '/auth/admin/users',
     adminCreateUser: '/auth/admin/create-user',
@@ -20,11 +22,15 @@ const apiEndpoints = {
     list: '/clients',
     bulk: '/clients/bulk',
     detail: (id) => `/clients/${id}`,
-    years: (id) => `/clients/${id}/years`
+    years: (id) => `/clients/${id}/years`,
+    annualReturn: (id) => `/clients/${id}/annual-return`,
+    annualAccess: (id, year) => `/clients/${id}/annual-return/${year}/access`
   },
   quotations: {
     list: '/quotations',
-    bulk: '/quotations/bulk'
+    bulk: '/quotations/bulk',
+    piboCategories: '/quotations/pibo-categories',
+    serviceCategories: '/quotations/service-categories'
   },
   teams: {
     list: '/teams',
@@ -37,7 +43,8 @@ const apiEndpoints = {
     list: '/notifications',
     markRead: (id) => `/notifications/${id}/read`,
     readAll: '/notifications/read-all'
-  }
+  },
+  media: { signature: '/media/signature' }
 }
 
 export default apiEndpoints

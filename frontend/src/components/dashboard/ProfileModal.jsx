@@ -51,8 +51,8 @@ export default function ProfileModal({ user, saving, onClose, onLogout, onSave, 
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 px-4 py-6">
-      <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-3xl bg-white shadow-2xl shadow-slate-900/20">
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
+      <div className="profile-modal-surface max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-3xl bg-white shadow-2xl shadow-slate-900/20">
+        <div className="relative z-10 flex items-center justify-between border-b border-slate-100 bg-white/80 px-6 py-5 backdrop-blur-sm">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -74,7 +74,7 @@ export default function ProfileModal({ user, saving, onClose, onLogout, onSave, 
           </button>
         </div>
 
-        <div className="grid gap-8 p-6 lg:grid-cols-[280px_1fr] lg:p-10">
+        <div className="relative z-10 grid gap-8 p-6 lg:grid-cols-[280px_1fr] lg:p-10">
           <aside className="rounded-2xl bg-gradient-to-br from-emerald-700 to-teal-600 p-6 text-white shadow-xl shadow-emerald-700/20">
             <div className="mx-auto grid h-28 w-28 place-items-center rounded-full bg-white/15 text-5xl font-black ring-8 ring-white/10">
               {(user?.name || user?.email || 'U').slice(0, 1).toUpperCase()}

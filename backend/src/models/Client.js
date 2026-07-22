@@ -60,6 +60,7 @@ function normalizeClientData(data = {}) {
 }
 
 const ClientSchema = new mongoose.Schema({
+  integrationKey: { type: String, trim: true, unique: true, sparse: true, select: false },
   selectedLead: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead' },
   adminControls: {
     approvalStatus: { type: String, enum: ['PENDING', 'APPROVED', 'REJECTED'], default: 'PENDING' },

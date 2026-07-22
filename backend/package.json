@@ -4,10 +4,12 @@
   "private": true,
   "main": "src/index.js",
   "scripts": {
+    "test": "node --test test/*.test.js",
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "seed-admin": "node src/seed/adminSeed.js",
-    "migrate:atlas": "node scripts/migrateMongoToAtlas.js"
+    "migrate:atlas": "node scripts/migrateMongoToAtlas.js",
+    "migrate:cloudinary-media": "node scripts/migrateBase64MediaToCloudinary.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { sendMail } = require('../utils/mailer');
 const { syncUserToCrm } = require('../utils/crmUserSync');
 const { ROLES } = require('../constants/roles');
@@ -12,7 +13,11 @@ function readOptionalId(value) {
 }
 
 function generateOtp() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return crypto.randomInt(100000, 1000000).toString();
+}
+
+function hashResetOtp(otp) {
+  return crypto.createHash('sha256').update(String(otp)).digest('hex');
 }
 
 async function findPasswordValidatedUser(email, password) {
@@ -127,14 +132,15 @@ function readAvatarUrl(value) {
 
   const avatarUrl = String(value);
   const isImageDataUrl = /^data:image\/(png|jpe?g|webp);base64,/i.test(avatarUrl);
-  if (!isImageDataUrl) {
+  const isCloudinaryImage = /^https:\/\/res\.cloudinary\.com\/[a-z0-9_-]+\/image\/upload\//i.test(avatarUrl);
+  if (!isImageDataUrl && !isCloudinaryImage) {
     const error = new Error('Profile image must be PNG, JPG, JPEG, or WEBP');
     error.statusCode = 400;
     throw error;
   }
 
-  const sizeInBytes = Math.ceil((avatarUrl.length * 3) / 4);
-  if (sizeInBytes > 2 * 1024 * 1024) {
+  const sizeInBytes = isImageDataUrl ? Math.ceil((avatarUrl.length * 3) / 4) : 0;
+  if (isImageDataUrl && sizeInBytes > 2 * 1024 * 1024) {
     const error = new Error('Profile image must be under 2MB');
     error.statusCode = 400;
     throw error;
@@ -246,6 +252,104 @@ exports.createUserByAdmin = async (req, res) => {
   }
 
   res.status(201).json({ ok: true, user: publicUser(user), crmSync });
+};
+
+exports.forgotPassword = async (req, res) => {
+  const email = String(req.body.email || '').toLowerCase().trim();
+  if (!email) return res.status(400).json({ error: 'Email required' });
+
+  const genericResult = { ok: true, message: 'If an active account exists for this email, a reset code has been sent.' };
+  const user = await User.findOne({ email });
+  if (!user || !user.isActive) return res.json(genericResult);
+
+  const lastIssued = user.passwordResetIssuedAt ? new Date(user.passwordResetIssuedAt).getTime() : 0;
+  if (lastIssued && Date.now() - lastIssued < 60 * 1000) {
+    return res.status(429).json({ error: 'Please wait one minute before requesting another reset code' });
+  }
+
+  const otp = generateOtp();
+  user.passwordResetOtpHash = hashResetOtp(otp);
+  user.passwordResetExpires = new Date(Date.now() + 10 * 60 * 1000);
+  user.passwordResetIssuedAt = new Date();
+  user.passwordResetAttempts = 0;
+  await user.save();
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#0f172a">
+      <h2 style="margin:0 0 12px">Reset your CCP password</h2>
+      <p>Your password reset code is:</p>
+      <p style="font-size:28px;font-weight:800;letter-spacing:4px;margin:18px 0">${otp}</p>
+      <p>This code expires in 10 minutes. If you did not request it, you can ignore this email.</p>
+    </div>
+  `;
+
+  try {
+    await sendMail(user.email, 'Reset your CCP password', html);
+  } catch (err) {
+    console.error('Password reset mail error', { message: err.message, code: err.code, response: err.response });
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`Development password reset OTP for ${user.email}: ${otp}`);
+      return res.json({ ...genericResult, devOtp: otp });
+    }
+    await User.updateOne(
+      { _id: user._id },
+      { $unset: { passwordResetOtpHash: 1, passwordResetExpires: 1, passwordResetIssuedAt: 1, passwordResetAttempts: 1 } }
+    );
+    return res.status(502).json({ error: 'Unable to send the reset email. Please try again later.' });
+  }
+
+  return res.json(genericResult);
+};
+
+exports.resetPassword = async (req, res) => {
+  const email = String(req.body.email || '').toLowerCase().trim();
+  const otp = String(req.body.otp || '').trim();
+  const newPassword = String(req.body.newPassword || '');
+  const confirmPassword = String(req.body.confirmPassword || '');
+
+  if (!email || !otp || !newPassword || !confirmPassword) {
+    return res.status(400).json({ error: 'Email, reset code, new password and confirmation are required' });
+  }
+  if (!/^\d{6}$/.test(otp)) return res.status(400).json({ error: 'Reset code must be 6 digits' });
+  if (newPassword.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  if (newPassword !== confirmPassword) return res.status(400).json({ error: 'Password confirmation does not match' });
+
+  const user = await User.findOne({ email });
+  const submittedHash = hashResetOtp(otp);
+  const storedHash = String(user?.passwordResetOtpHash || '');
+  const validCode = /^[a-f0-9]{64}$/.test(storedHash)
+    && crypto.timingSafeEqual(Buffer.from(submittedHash), Buffer.from(storedHash));
+  const expired = !user?.passwordResetExpires || user.passwordResetExpires.getTime() <= Date.now();
+  if (!user || !user.isActive || !validCode || expired || user.passwordResetAttempts >= 5) {
+    if (user?.passwordResetOtpHash) {
+      user.passwordResetAttempts = Number(user.passwordResetAttempts || 0) + 1;
+      if (expired || user.passwordResetAttempts >= 5) {
+        user.passwordResetOtpHash = undefined;
+        user.passwordResetExpires = undefined;
+        user.passwordResetIssuedAt = undefined;
+      }
+      await user.save();
+    }
+    return res.status(400).json({ error: 'Invalid or expired reset code' });
+  }
+
+  user.password = await bcrypt.hash(newPassword, 10);
+  user.passwordResetOtpHash = undefined;
+  user.passwordResetExpires = undefined;
+  user.passwordResetIssuedAt = undefined;
+  user.passwordResetAttempts = undefined;
+  user.otp = undefined;
+  user.otpExpires = undefined;
+  user.otpIssuedAt = undefined;
+  await user.save();
+
+  try {
+    await syncUserToCrm('update', user, { password: newPassword });
+  } catch (err) {
+    console.error('CRM password reset sync failed', err.message);
+  }
+
+  return res.json({ ok: true, message: 'Password reset successfully. You can now sign in.' });
 };
 
 exports.updateUserByAdmin = async (req, res) => {
@@ -376,7 +480,7 @@ exports.updatePassword = async (req, res) => {
 };
 
 exports.listUsers = async (req, res) => {
-  const users = await User.find().select('-otp -otpExpires -otpIssuedAt -password').sort({ createdAt: -1 });
+  const users = await User.find().select('-otp -otpExpires -otpIssuedAt -password -passwordResetOtpHash -passwordResetExpires -passwordResetIssuedAt -passwordResetAttempts').sort({ createdAt: -1 });
   res.json({ ok: true, users });
 };
 

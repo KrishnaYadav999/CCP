@@ -1,21 +1,22 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Building2, CheckCircle2, ChevronDown, Download, Eye, FileCheck2, FileSpreadsheet, FileText, FolderCheck, MapPin, Pencil, Plus, RefreshCw, Search, ShieldCheck, UserRound, X } from 'lucide-react';
+import { ArrowLeft, Building2, CheckCircle2, ChevronDown, Download, Eye, FileCheck2, FileSpreadsheet, FileText, FolderCheck, MapPin, Pencil, Plus, RefreshCw, Search, ShieldCheck, Trash2, Upload, UserRound, X } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import DashboardShell from '../components/dashboard/DashboardShell';
+import CrmConnectButton from '../components/dashboard/CrmConnectButton';
 import ProfileModal from '../components/dashboard/ProfileModal';
 import { brand } from '../constants/brand';
 import { adminRoles } from '../constants/dashboard';
-import { apiService, getApiErrorMessage } from '../services/api';
+import { apiService, getApiErrorMessage, uploadMedia, uploadMediaFiles } from '../services/api';
 
 const tabs = [
   { id: 'basic', label: 'Client Basic Info', icon: Building2 },
   { id: 'address', label: 'Address Details', icon: MapPin },
-  { id: 'compliance', label: 'Compliance & MSME', icon: FileCheck2 },
-  { id: 'cte', label: 'CTE / CTO / CCA', icon: FolderCheck },
-  { id: 'cpcb', label: 'CPCB Details', icon: ShieldCheck },
-  { id: 'validation', label: 'Validation Documents', icon: FileText },
-  { id: 'contacts', label: 'OTP & People', icon: UserRound }
+  { id: 'compliance', label: 'Document', icon: FileCheck2 },
+  { id: 'cte', label: 'CTE & CTO / CCA', icon: FolderCheck },
+  { id: 'cpcb', label: 'CPCB Login Credential', icon: ShieldCheck },
+  { id: 'cpcbScreenshots', label: 'CPCB Screenshot', icon: FileText },
+  { id: 'contacts', label: 'Authorized Person Details', icon: UserRound }
 ];
 
 const financialYears = Array.from({ length: 12 }, (_, index) => {
@@ -57,11 +58,76 @@ const emptyClient = {
   msmeRows: [],
   cte: { numberOfPlantsLocations: '', plantWiseDetails: [] },
   cpcb: {},
-  validation: {},
+  cpcbScreenshots: [],
   otp: {},
   authorised: {},
   coordinating: {}
 };
+
+function escapeReportHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[character]));
+}
+
+function reportValue(value) {
+  if (value === true) return 'Yes';
+  if (value === false) return 'No';
+  if (!value) return 'Not provided';
+  if (typeof value === 'string' && (value.startsWith('data:') || value.length > 250)) return 'Attached';
+  return escapeReportHtml(value);
+}
+
+function reportRows(data) {
+  const labels = Object.keys(data || {});
+  if (!labels.length) return '<tr><td colspan="2" class="empty">No details provided</td></tr>';
+  return labels.map((key) => {
+    const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, (letter) => letter.toUpperCase());
+    const value = data[key];
+    if (Array.isArray(value)) return `<tr><th>${escapeReportHtml(label)}</th><td>${value.length ? `${value.length} record(s)` : 'Not provided'}</td></tr>`;
+    if (value && typeof value === 'object') return '';
+    return `<tr><th>${escapeReportHtml(label)}</th><td>${reportValue(value)}</td></tr>`;
+  }).join('');
+}
+
+function downloadComplianceHealthReport(clientData) {
+  const popup = window.open('', '_blank', 'noopener,noreferrer');
+  if (!popup) {
+    window.alert('Please allow pop-ups to generate the Compliance Health Report.');
+    return;
+  }
+  const requiredCertificates = complianceRows.map(([key, label]) => ({ key, label }));
+  const completed = requiredCertificates.filter(({ key }) => clientData.compliance?.[`${key}Number`] && clientData.compliance?.[`${key}Date`]);
+  const score = Math.round((completed.length / requiredCertificates.length) * 100);
+  const health = score >= 80 ? 'Healthy' : score >= 50 ? 'Needs Attention' : 'Critical';
+  const healthClass = score >= 80 ? 'healthy' : score >= 50 ? 'attention' : 'critical';
+  const missing = requiredCertificates.filter(({ key }) => !clientData.compliance?.[`${key}Number`] || !clientData.compliance?.[`${key}Date`]);
+  const sections = [
+    ['Client Basic Information', clientData.basic],
+    ['Administration & Workflow', clientData.adminControls],
+    ['Registered Address', clientData.registeredAddress],
+    ['Communication Address', clientData.communicationAddress],
+    ['Compliance Certificates', clientData.compliance],
+    ['CPCB Login Credential', clientData.cpcb],
+    ['OTP Details', clientData.otp],
+    ['Authorised Person', clientData.authorised],
+    ['Coordinating Person', clientData.coordinating]
+  ];
+  const generatedAt = new Intl.DateTimeFormat('en-IN', { dateStyle: 'long', timeStyle: 'short' }).format(new Date());
+  const documentHtml = `<!doctype html><html><head><title>Compliance Health Report</title><style>
+    @page{size:A4;margin:14mm}*{box-sizing:border-box}body{margin:0;font:12px Arial,sans-serif;color:#17202a;background:#fff}.header{background:#0f684f;color:#fff;padding:24px;border-radius:12px}.eyebrow{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#a7e0cf;font-weight:700}h1{margin:6px 0 4px;font-size:26px}.meta{color:#d9f2eb}.score-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin:16px 0}.metric{border:1px solid #dbe7e3;border-radius:10px;padding:14px}.metric small{display:block;color:#65736f;text-transform:uppercase;font-weight:700}.metric strong{display:block;margin-top:6px;font-size:22px}.healthy{color:#087443}.attention{color:#d97706}.critical{color:#c62828}.section{margin-top:16px;break-inside:avoid}.section h2{margin:0;background:#eaf5f1;color:#0f684f;padding:9px 12px;border-left:4px solid #ff5108;font-size:15px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #dce5e2;padding:8px;text-align:left;vertical-align:top;overflow-wrap:anywhere}th{width:38%;background:#f7faf9;color:#4b5b56}.empty{color:#788783;text-align:center}.alert{border:1px solid #fed7aa;background:#fff7ed;padding:12px;border-radius:9px;margin-top:12px}.alert ul{margin:7px 0 0;padding-left:18px}.footer{margin-top:20px;border-top:1px solid #ccd8d4;padding-top:9px;color:#687773;font-size:10px}.actions{position:fixed;right:18px;bottom:18px}@media print{.actions{display:none}.section{break-inside:avoid}.header{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+  </style></head><body>
+    <header class="header"><div class="eyebrow">${escapeReportHtml(brand.name)} • Compliance Intelligence</div><h1>Compliance Health Report</h1><div class="meta">${reportValue(clientData.basic?.clientLegalName)} • Generated ${escapeReportHtml(generatedAt)}</div></header>
+    <div class="score-grid"><div class="metric"><small>Health Score</small><strong class="${healthClass}">${score}%</strong></div><div class="metric"><small>Overall Status</small><strong class="${healthClass}">${health}</strong></div><div class="metric"><small>Certificate Coverage</small><strong>${completed.length}/${requiredCertificates.length}</strong></div></div>
+    <div class="alert"><strong>Compliance observations</strong>${missing.length ? `<ul>${missing.map(({ label }) => `<li>${escapeReportHtml(label)} is incomplete or missing.</li>`).join('')}</ul>` : '<p>All tracked compliance certificate numbers and periods are available.</p>'}</div>
+    ${sections.map(([title, data]) => `<section class="section"><h2>${title}</h2><table>${reportRows(data)}</table></section>`).join('')}
+    <section class="section"><h2>MSME Records</h2><table>${(clientData.msmeRows || []).length ? clientData.msmeRows.map((row, index) => `<tr><th>Record ${index + 1}</th><td>${Object.entries(row).map(([key, value]) => `${escapeReportHtml(key.replace(/([A-Z])/g, ' $1'))}: ${reportValue(value)}`).join('<br>')}</td></tr>`).join('') : '<tr><td class="empty">No MSME records provided</td></tr>'}</table></section>
+    <section class="section"><h2>Plant Consent Overview</h2><table>${reportRows(clientData.cte)}${(clientData.cte?.plantWiseDetails || []).map((plant, index) => `<tr><th>Plant ${index + 1}</th><td>${reportValue(plant.plantName || plant.plantLocation)} — CTE: ${reportValue(plant.cteConsentNo)} — CTO/CCA: ${reportValue(plant.ctoOrderNo)}</td></tr>`).join('')}</table></section>
+    <footer class="footer">System-generated report based on information entered in CCP. This report highlights data completeness and does not replace a statutory or legal compliance audit.</footer>
+    <button class="actions" onclick="window.print()" style="background:#ff5108;color:white;border:0;border-radius:9px;padding:12px 18px;font-weight:700;cursor:pointer">Download / Save PDF</button>
+    <script>setTimeout(function(){window.print()},350)</script></body></html>`;
+  popup.document.open();
+  popup.document.write(documentHtml);
+  popup.document.close();
+}
 
 export default function ClientMaster() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -90,7 +156,10 @@ export default function ClientMaster() {
   const isLastStep = activeIndex === tabs.length - 1;
   const leadOptions = useMemo(() => leads.map((lead) => ({
     value: lead._id || lead.id,
-    label: `${lead.leadCode || 'ATPL-LEAD-0001'} - ${lead.company || 'Untitled lead'} - ${lead.piboCategory || lead.status || 'Draft'}`
+    label: `${lead.leadCode || 'ATPL-0001'} - ${lead.company || 'Untitled lead'} - ${lead.piboCategory || lead.status || 'Draft'}`,
+    code: lead.leadCode || 'Unnumbered lead',
+    company: lead.company || 'Untitled lead',
+    category: lead.piboCategory || lead.status || 'Draft'
   })), [leads]);
   const staffOptions = useMemo(() => staff.map((user) => ({ value: user._id || user.id, label: `${user.name || user.email} (${user.role})` })), [staff]);
 
@@ -440,9 +509,17 @@ export default function ClientMaster() {
     return false;
   }
 
+  function validateCpcbScreenshots() {
+    const invalid = (client.cpcbScreenshots || []).some((item) => !String(item?.name || '').trim() || !item?.file?.name || !item?.file?.url);
+    if (!invalid) return true;
+    setError('Every CPCB screenshot/document must have a name and an uploaded file.');
+    setNotice('');
+    return false;
+  }
+
   function goToNextStep() {
     if (isLastStep) return;
-    if (!validateCteStep()) return;
+    if (!validateCteStep() || !validateCpcbScreenshots()) return;
     showToast(`${tabs[activeIndex]?.label || 'Step'} completed.`);
     window.setTimeout(() => {
       setActiveTab(tabs[activeIndex + 1].id);
@@ -556,9 +633,24 @@ export default function ClientMaster() {
 
     try {
       const payload = buildExcelImportPayload();
-      const response = await apiService.clients.bulkImport(payload);
-      const successCount = response.data.imported || 0;
-      const failures = response.data.failures || [];
+      const chunkSize = 10;
+      const chunks = Array.from({ length: Math.ceil(payload.length / chunkSize) }, (_, index) => payload.slice(index * chunkSize, (index + 1) * chunkSize));
+      let successCount = 0;
+      const failures = [];
+      for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
+        setNotice(`Importing client batch ${chunkIndex + 1} of ${chunks.length}… (${Math.min(chunkIndex * chunkSize, payload.length)}/${payload.length} processed)`);
+        try {
+          const response = await apiService.clients.bulkImport(chunks[chunkIndex], { includeRecords: false });
+          successCount += response.data.imported || 0;
+          const rowOffset = chunkIndex * chunkSize;
+          (response.data.failures || []).forEach((failure) => failures.push({ ...failure, row: rowOffset + Number(failure.row || 1) }));
+        } catch (error) {
+          const rowOffset = chunkIndex * chunkSize;
+          const chunkFailures = error?.response?.data?.failures;
+          if (Array.isArray(chunkFailures) && chunkFailures.length) chunkFailures.forEach((failure) => failures.push({ ...failure, row: rowOffset + Number(failure.row || 1) }));
+          else chunks[chunkIndex].forEach((row, index) => failures.push({ row: rowOffset + index + 1, error: getApiErrorMessage(error, `Client batch ${chunkIndex + 1} failed`) }));
+        }
+      }
 
       if (successCount) {
         setNotice(`${successCount} client${successCount === 1 ? '' : 's'} imported as drafts.`);
@@ -653,6 +745,7 @@ export default function ClientMaster() {
   }
 
   async function saveClient(workflowStatus) {
+    if (!validateCpcbScreenshots()) return;
     setSaving(true);
     setError('');
     setNotice('');
@@ -731,6 +824,7 @@ export default function ClientMaster() {
           onEdit={(item) => {
             hydrateClientForEdit(item);
           }}
+          onAnnualReturns={(item) => navigate(`/sales/client-annual-returns/${encodeURIComponent(item._id || item.id || getClientUniqueId(item))}`)}
         />
         {profileOpen && <ProfileModal user={currentUser} saving={false} onClose={() => setProfileOpen(false)} onLogout={handleLogout} onSave={() => {}} onUpdatePassword={() => {}} />}
         {viewClient && <ClientViewModal client={viewClient} onClose={() => setViewClient(null)} />}
@@ -752,22 +846,20 @@ export default function ClientMaster() {
                 <h1 className="mt-1 text-3xl font-black text-slate-950">Client Master Generator</h1>
               </div>
             </div>
-            <div className="rounded-2xl border border-teal-100 bg-white px-4 py-3 shadow-sm">
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Active Tab</p>
-              <p className="mt-1 font-black text-[#30737B]">{activeIndex + 1}. {tabs[activeIndex]?.label}</p>
+            <div className="flex flex-wrap items-center gap-3">
+              <CrmConnectButton />
+              <button type="button" onClick={() => downloadComplianceHealthReport(client)} className="btn-lift inline-flex min-h-12 items-center gap-2 rounded-xl bg-[#ff5108] px-5 font-black text-white shadow-lg shadow-orange-600/20">
+                <Download className="h-4 w-4" /> Download Health Report
+              </button>
+              <div className="rounded-2xl border border-teal-100 bg-white px-4 py-3 shadow-sm">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Active Tab</p>
+                <p className="mt-1 font-black text-[#30737B]">{activeIndex + 1}. {tabs[activeIndex]?.label}</p>
+              </div>
             </div>
           </div>
 
           <Card title="Select Lead" className="mt-6">
-            <Field required label="Choose Existing Lead">
-              <div className="relative">
-                <select value={client.selectedLead} onChange={(event) => handleLeadSelect(event.target.value)} className="form-input pr-12">
-                  <option value="">Search and select a lead</option>
-                  {leadOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-              </div>
-            </Field>
+            <LeadSelector value={client.selectedLead} options={leadOptions} onChange={handleLeadSelect} />
           </Card>
 
           {canSeeAdminControls && (
@@ -780,7 +872,7 @@ export default function ClientMaster() {
             </Card>
           )}
 
-          <Card title="Excel Bulk Import" className="mt-6">
+          {canSeeAdminControls && <Card title="Excel Bulk Import" className="mt-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex min-w-0 gap-3">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
@@ -821,7 +913,7 @@ export default function ClientMaster() {
                 </button>
               </div>
             </div>
-          </Card>
+          </Card>}
 
           <section className="mt-6 rounded-2xl border border-teal-100 bg-white/80 p-3 shadow-lg shadow-teal-900/5">
             <div className="flex gap-2 overflow-x-auto pb-1">
@@ -854,7 +946,7 @@ export default function ClientMaster() {
             {activeTab === 'compliance' && <ComplianceTab client={client} setValue={setValue} addRow={addRow} updateRow={updateRow} removeRow={removeRow} />}
             {activeTab === 'cte' && <CteTab client={client} setValue={setValue} />}
             {activeTab === 'cpcb' && <CpcbTab client={client} setValue={setValue} />}
-            {activeTab === 'validation' && <ValidationTab client={client} setValue={setValue} />}
+            {activeTab === 'cpcbScreenshots' && <CpcbScreenshotsTab client={client} setClient={setClient} setError={setError} setNotice={setNotice} />}
             {activeTab === 'contacts' && <ContactsTab client={client} setValue={setValue} />}
           </div>
 
@@ -1134,7 +1226,7 @@ function mapExcelRowToClient(row, staff, leads) {
   return payload;
 }
 
-function ClientDirectoryView({ clients, staff, loading, onRefresh, onAddNew, onView, onEdit }) {
+function ClientDirectoryView({ clients, staff, loading, onRefresh, onAddNew, onView, onEdit, onAnnualReturns }) {
   const [query, setQuery] = useState('');
   const [visibilityFilter, setVisibilityFilter] = useState('');
   const [staffFilter, setStaffFilter] = useState('');
@@ -1343,6 +1435,7 @@ function ClientDirectoryView({ clients, staff, loading, onRefresh, onAddNew, onV
                         <div className="flex items-center gap-2">
                           <button type="button" onClick={() => onView(item)} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50" title="View"><Eye className="h-4 w-4" /></button>
                           <button type="button" onClick={() => onEdit(item)} className="grid h-9 w-9 place-items-center rounded-lg border border-orange-200 text-orange-600 hover:bg-orange-50" title="Edit"><Pencil className="h-4 w-4" /></button>
+                          <button type="button" onClick={() => onAnnualReturns(item)} className="whitespace-nowrap rounded-lg border border-teal-200 px-3 py-2 text-xs font-black text-teal-700 hover:bg-teal-50" title="Annual Return History">Annual Return History</button>
                         </div>
                       </td>
                     </tr>
@@ -1476,7 +1569,7 @@ function ConsentTable({ title, eyebrow, plants, columns, onPlantChange }) {
       <div className="max-w-full overflow-hidden rounded-2xl border border-slate-200 bg-white">
         <div className="max-w-full overflow-x-auto">
           <table className="w-full min-w-[920px] table-fixed text-left text-sm">
-            <thead className="bg-slate-950 text-xs font-black uppercase tracking-[0.08em] text-white">
+            <thead className="border-b-2 border-teal-200 bg-gradient-to-r from-teal-50 via-emerald-50 to-cyan-50 text-xs font-black uppercase tracking-[0.08em] text-teal-900">
               <tr>
                 <th className="w-16 px-3 py-4 text-center">Sr.No</th>
                 <th className="w-36 px-3 py-4">Plant Name</th>
@@ -1540,7 +1633,7 @@ function PlantQuantityTable({ title, plants, quantityKey, columns, rowTemplate, 
       <div className="max-w-full overflow-hidden rounded-2xl border border-slate-200 bg-white">
         <div className="max-w-full overflow-x-auto">
           <table className="w-full min-w-[760px] table-fixed text-left text-sm">
-            <thead className="bg-slate-950 text-xs font-black uppercase tracking-[0.08em] text-white">
+            <thead className="border-b-2 border-teal-200 bg-gradient-to-r from-teal-50 via-emerald-50 to-cyan-50 text-xs font-black uppercase tracking-[0.08em] text-teal-900">
               <tr>
                 <th className="w-16 px-3 py-4 text-center">Sr.No</th>
                 {columns.map(([field, label], index) => (
@@ -1631,7 +1724,7 @@ function CteTab({ client, setValue }) {
   }
 
   return (
-    <Card title="CTE / CTO / CCA Details">
+    <Card title="CTE & CTO/CCA Details">
       <div className="min-w-0 space-y-7">
         <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-5">
           <div className="grid gap-5 lg:grid-cols-[1fr_280px] lg:items-end">
@@ -1715,7 +1808,7 @@ function CteTab({ client, setValue }) {
 
 function CpcbTab({ client, setValue }) {
   return (
-    <Card title="CPCB Details">
+    <Card title="CPCB Login Credential">
       <div className="grid gap-5 md:grid-cols-2">
         <SelectLike required label="CPCB Status" value={client.cpcb.status || ''} options={selectOptions.cpcbStatus} onChange={(value) => setValue('cpcb', 'status', value)} />
         <Field label="Remark"><textarea className="form-input min-h-[92px] resize-y py-3" value={client.cpcb.remark || ''} onChange={(event) => setValue('cpcb', 'remark', event.target.value)} /></Field>
@@ -1733,25 +1826,35 @@ function CpcbTab({ client, setValue }) {
   );
 }
 
-function ValidationTab({ client, setValue }) {
+function CpcbScreenshotsTab({ client, setClient, setError, setNotice }) {
+  const supported = /^(image\/(png|jpeg|gif|webp)|application\/pdf|application\/msword|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document|application\/vnd\.ms-excel|application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet)$/i;
+  async function addFiles(event) {
+    const files = [...(event.target.files || [])];
+    const invalid = files.find((file) => !supported.test(file.type) || file.size > 10 * 1024 * 1024);
+    if (invalid) { setError(`${invalid.name} is unsupported or larger than 10 MB.`); event.target.value = ''; return; }
+    let uploaded;
+    try {
+      const cloudFiles = await uploadMediaFiles(files, 'client-cpcb-screenshots');
+      uploaded = cloudFiles.map((file) => ({ id: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`, name: '', file, uploadedAt: file.uploadedAt }));
+    } catch (error) { setError(getApiErrorMessage(error, error.message || 'Cloudinary upload failed.')); event.target.value = ''; return; }
+    setClient((current) => ({ ...current, cpcbScreenshots: [...(current.cpcbScreenshots || []), ...uploaded] }));
+    setNotice('Files uploaded. Please name every uploaded file.');
+    event.target.value = '';
+  }
   return (
-    <Card title="Validation Documents">
-      <div className="mb-5 flex items-center gap-4 rounded-lg border border-emerald-100 bg-emerald-50/60 px-4 py-3">
-        <div className="grid h-14 w-16 place-items-center rounded-lg border border-emerald-100 bg-white p-2">
-          <img src={brand.logoUrl} alt="Anant Tattva" className="max-h-full max-w-full object-contain" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-700">Quotation</p>
-          <p className="truncate text-lg font-black text-slate-950">{dataLabel(client.basic?.clientLegalName || client.basic?.tradeName || 'Client quotation')}</p>
-        </div>
+    <Card title="CPCB Screenshot">
+      <div className="rounded-2xl border border-dashed border-teal-300 bg-gradient-to-r from-teal-50 to-cyan-50 p-6 text-center">
+        <Upload className="mx-auto h-8 w-8 text-teal-700" /><p className="mt-2 font-black text-slate-900">Upload multiple screenshots or documents</p>
+        <p className="mt-1 text-sm font-semibold text-slate-500">PNG, JPG, GIF, WebP, PDF, DOC/DOCX, XLS/XLSX · max 10 MB each</p>
+        <label className="btn-lift mt-4 inline-flex cursor-pointer items-center gap-2 rounded-xl bg-teal-700 px-5 py-3 font-black text-white"><Upload className="h-4 w-4" /> Select files<input className="sr-only" type="file" multiple accept="image/png,image/jpeg,image/gif,image/webp,.pdf,.doc,.docx,.xls,.xlsx" onChange={addFiles} /></label>
       </div>
-      <div className="grid gap-5 md:grid-cols-2">
-        <Field label="Quotation Number"><input className="form-input" value={client.validation.quotationNumber || ''} onChange={(event) => setValue('validation', 'quotationNumber', event.target.value)} /></Field>
-        <SelectLike label="Quotation Date" value={client.validation.quotationDate || ''} options={selectOptions.years} placeholder="Select financial year" onChange={(value) => setValue('validation', 'quotationDate', value)} />
-        <Field label="Quotation Document"><UploadButton value={client.validation.quotationDocument} onChange={(value) => setValue('validation', 'quotationDocument', value)} /></Field>
-        <Field label="Initial Purchase Order Number"><input className="form-input" value={client.validation.poNumber || ''} onChange={(event) => setValue('validation', 'poNumber', event.target.value)} /></Field>
-        <SelectLike label="Initial Purchase Order Date" value={client.validation.poDate || ''} options={selectOptions.years} placeholder="Select financial year" onChange={(value) => setValue('validation', 'poDate', value)} />
-        <Field label="Initial Purchase Order Document"><UploadButton value={client.validation.poDocument} onChange={(value) => setValue('validation', 'poDocument', value)} /></Field>
+      <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {(client.cpcbScreenshots || []).map((item, index) => <article key={item.id || index} className="min-w-0 rounded-2xl border border-teal-100 bg-white p-4 shadow-sm">
+          <Field required label="Document Name"><input className={`form-input ${!String(item.name || '').trim() ? 'border-red-300' : ''}`} value={item.name || ''} onChange={(event) => setClient((current) => ({ ...current, cpcbScreenshots: current.cpcbScreenshots.map((row, rowIndex) => rowIndex === index ? { ...row, name: event.target.value } : row) }))} placeholder="Enter document name" /></Field>
+          {!String(item.name || '').trim() && <p className="mt-1 text-xs font-bold text-red-600">Document name is required.</p>}
+          <p className="mt-3 truncate text-sm font-black text-slate-700" title={item.file?.name}>{item.file?.name}</p><p className="mt-1 text-xs font-semibold text-slate-400">{Math.max(1, Math.round((item.file?.size || 0) / 1024))} KB</p>
+          <div className="mt-4 flex gap-2"><a href={item.file?.url} target="_blank" rel="noreferrer" className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-teal-200 px-3 py-2 font-black text-teal-700"><Eye className="h-4 w-4" /> View</a><button type="button" onClick={() => setClient((current) => ({ ...current, cpcbScreenshots: current.cpcbScreenshots.filter((_, rowIndex) => rowIndex !== index) }))} className="inline-flex items-center justify-center rounded-xl border border-red-200 px-3 py-2 text-red-600" aria-label={`Remove ${item.file?.name}`}><Trash2 className="h-4 w-4" /></button></div>
+        </article>)}
       </div>
     </Card>
   );
@@ -1837,22 +1940,24 @@ function DynamicTable({ title, rows, columns, uploadColumn, onAdd, onUpdate, onR
 
 function UploadButton({ value, onChange }) {
   const [localValue, setLocalValue] = useState(value);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
 
   useEffect(() => {
     setLocalValue(value);
   }, [value]);
 
-  function handleFile(event) {
+  async function handleFile(event) {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const nextValue = { name: file.name, dataUrl: reader.result };
+    setUploading(true); setUploadError('');
+    try {
+      const nextValue = await uploadMedia(file, 'client-documents');
       setLocalValue(nextValue);
       onChange(nextValue);
-    };
-    reader.readAsDataURL(file);
+    } catch (error) { setUploadError(getApiErrorMessage(error, error.message || 'Upload failed')); }
+    finally { setUploading(false); }
   }
 
   function viewFile() {
@@ -1868,8 +1973,8 @@ function UploadButton({ value, onChange }) {
     <div className="grid gap-2">
       <div className="flex flex-wrap gap-2">
         <label className="btn-lift inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 hover:bg-slate-50">
-          <Upload className="h-4 w-4" /> Upload
-          <input type="file" className="sr-only" onChange={handleFile} />
+          <Upload className="h-4 w-4" /> {uploading ? 'Uploading...' : 'Upload'}
+          <input type="file" className="sr-only" onChange={handleFile} disabled={uploading} />
         </label>
         {(localValue?.dataUrl || localValue?.url || typeof localValue === 'string') && (
           <button type="button" onClick={viewFile} className="btn-lift inline-flex min-h-10 items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 font-black text-emerald-700 hover:bg-emerald-100">
@@ -1878,6 +1983,7 @@ function UploadButton({ value, onChange }) {
         )}
       </div>
       {localValue?.name && <p className="max-w-56 truncate text-xs font-bold text-slate-500">{localValue.name}</p>}
+      {uploadError && <p className="max-w-64 text-xs font-bold text-red-600">{uploadError}</p>}
     </div>
   );
 }
@@ -1899,6 +2005,71 @@ function Field({ label, required, children }) {
       <span className="text-sm font-black text-slate-700">{label} {required && <span className="text-red-500">*</span>}</span>
       <div className="mt-2">{children}</div>
     </div>
+  );
+}
+
+function LeadSelector({ value, options, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const selected = options.find((option) => String(option.value) === String(value));
+  const normalizedQuery = query.trim().toLowerCase();
+  const matches = options.filter((option) => !normalizedQuery || option.label.toLowerCase().includes(normalizedQuery));
+
+  function choose(option) {
+    onChange(option.value);
+    setQuery('');
+    setOpen(false);
+  }
+
+  return (
+    <Field required label="Choose Existing Lead">
+      <div className="relative z-30">
+        <div className={`flex min-h-14 items-center gap-3 rounded-2xl border bg-white px-4 shadow-sm transition ${open ? 'border-[#30737B] ring-4 ring-emerald-100' : 'border-slate-200 hover:border-emerald-300'}`}>
+          <Search className="h-5 w-5 shrink-0 text-[#30737B]" />
+          <input
+            value={open ? query : (selected?.label || '')}
+            onFocus={() => { setOpen(true); setQuery(''); }}
+            onBlur={() => window.setTimeout(() => { setOpen(false); setQuery(''); }, 150)}
+            onChange={(event) => { setQuery(event.target.value); setOpen(true); }}
+            placeholder="Search by lead number, company or category"
+            className="min-w-0 flex-1 bg-transparent text-sm font-bold text-slate-800 outline-none placeholder:text-slate-400"
+          />
+          {value && !open && (
+            <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => onChange('')} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-500" title="Clear selected lead">
+              <X className="h-4 w-4" />
+            </button>
+          )}
+          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { setOpen((current) => !current); setQuery(''); }} className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-50 text-[#30737B] hover:bg-emerald-100" aria-label="Open lead list">
+            <ChevronDown className={`h-5 w-5 transition ${open ? 'rotate-180' : ''}`} />
+          </button>
+        </div>
+
+        {open && (
+          <div className="absolute left-0 right-0 top-[calc(100%+10px)] z-[100] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/20">
+            <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 py-3">
+              <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Available leads</p>
+              <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-black text-emerald-700">{matches.length} found</span>
+            </div>
+            <div className="max-h-80 overflow-y-auto p-2">
+              {matches.length ? matches.map((option) => {
+                const active = String(option.value) === String(value);
+                return (
+                  <button key={option.value} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => choose(option)} className={`mb-1 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition last:mb-0 ${active ? 'bg-[#30737B] text-white shadow-md' : 'text-slate-700 hover:bg-emerald-50'}`}>
+                    <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg text-xs font-black ${active ? 'bg-white/15 text-white' : 'bg-emerald-100 text-emerald-700'}`}>{option.code.split('-').pop()}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-black">{option.company}</span>
+                      <span className={`mt-0.5 block truncate text-xs font-bold ${active ? 'text-emerald-100' : 'text-slate-500'}`}>{option.code} · {option.category}</span>
+                    </span>
+                    {active && <CheckCircle2 className="h-5 w-5 shrink-0" />}
+                  </button>
+                );
+              }) : <div className="px-4 py-10 text-center"><Search className="mx-auto h-8 w-8 text-slate-300" /><p className="mt-3 font-black text-slate-500">No matching lead found</p><p className="mt-1 text-xs font-bold text-slate-400">Try a lead number or company name.</p></div>}
+            </div>
+            {matches.length > 20 && <p className="border-t border-slate-100 bg-slate-50 px-4 py-2 text-center text-xs font-bold text-slate-500">Showing all {matches.length} leads · Search to narrow the list</p>}
+          </div>
+        )}
+      </div>
+    </Field>
   );
 }
 
@@ -1930,7 +2101,7 @@ function SelectLike({ label, required, value, options = [], onChange, disabled =
 
   return (
     <Field label={label} required={required}>
-      <div className="relative z-20">
+      <div className={`relative ${open ? 'z-[100]' : 'z-10'}`}>
         <input
           value={draft}
           disabled={disabled}

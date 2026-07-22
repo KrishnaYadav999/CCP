@@ -78,6 +78,11 @@ export default function Login(){
             </button>
           </div>
         </label>
+        <div className="-mt-2 text-right">
+          <button type="button" onClick={() => navigate('/forgot-password')} className="text-sm font-black text-emerald-700 transition hover:text-emerald-900 hover:underline">
+            Forgot password?
+          </button>
+        </div>
         {error && <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</p>}
         <button className="btn-lift group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-700 via-teal-700 to-sky-700 px-5 py-4 font-black text-white shadow-xl shadow-emerald-900/20 transition disabled:cursor-not-allowed disabled:opacity-70" disabled={loading}>
           <span className="absolute inset-0 -translate-x-full bg-white/20 transition duration-700 group-hover:translate-x-full" />

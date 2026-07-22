@@ -29,7 +29,9 @@ api.interceptors.response.use(
     const publicAuthEndpoints = [
       apiEndpoints.auth.requestOtp,
       apiEndpoints.auth.resendOtp,
-      apiEndpoints.auth.verifyOtp
+      apiEndpoints.auth.verifyOtp,
+      apiEndpoints.auth.forgotPassword,
+      apiEndpoints.auth.resetPassword
     ]
     const isLoginRequest = publicAuthEndpoints.some((endpoint) => url.includes(endpoint))
 
@@ -66,6 +68,8 @@ export const apiService = {
     requestOtp: (payload) => api.post(apiEndpoints.auth.requestOtp, payload),
     resendOtp: (payload) => api.post(apiEndpoints.auth.resendOtp, payload),
     verifyOtp: (payload) => api.post(apiEndpoints.auth.verifyOtp, payload),
+    forgotPassword: (payload) => api.post(apiEndpoints.auth.forgotPassword, payload),
+    resetPassword: (payload) => api.post(apiEndpoints.auth.resetPassword, payload),
     getUsers: () => api.get(apiEndpoints.auth.users),
     getAdminUsers: () => api.get(apiEndpoints.auth.adminUsers),
     createAdminUser: (payload) => api.post(apiEndpoints.auth.adminCreateUser, payload),
@@ -73,21 +77,28 @@ export const apiService = {
   },
   leads: {
     getList: () => api.get(apiEndpoints.leads.list),
-    bulkImport: (leads) => api.post(apiEndpoints.leads.bulk, { leads }),
+    bulkImport: (leads, options = {}) => api.post(apiEndpoints.leads.bulk, { leads, ...options }),
     create: (payload) => api.post(apiEndpoints.leads.list, payload),
     update: (id, payload) => api.put(apiEndpoints.leads.detail(id), payload)
   },
   clients: {
     getList: () => api.get(apiEndpoints.clients.list),
-    bulkImport: (clients) => api.post(apiEndpoints.clients.bulk, { clients }),
+    bulkImport: (clients, options = {}) => api.post(apiEndpoints.clients.bulk, { clients, ...options }),
     create: (payload) => api.post(apiEndpoints.clients.list, payload),
     update: (id, payload) => api.put(apiEndpoints.clients.detail(id), payload),
-    updateYears: (id, payload) => api.patch(apiEndpoints.clients.years(id), payload)
+    updateYears: (id, payload) => api.patch(apiEndpoints.clients.years(id), payload),
+    getAnnualReturn: (id) => api.get(apiEndpoints.clients.annualReturn(id)),
+    saveAnnualReturn: (id, payload) => api.put(apiEndpoints.clients.annualReturn(id), payload),
+    getAnnualAccess: (id, year) => api.get(apiEndpoints.clients.annualAccess(id, year))
   },
   quotations: {
     getList: () => api.get(apiEndpoints.quotations.list),
     save: (payload) => api.post(apiEndpoints.quotations.list, payload),
-    bulkUpsert: (quotations) => api.post(apiEndpoints.quotations.bulk, { quotations })
+    bulkUpsert: (quotations) => api.post(apiEndpoints.quotations.bulk, { quotations }),
+    getPiboCategories: () => api.get(apiEndpoints.quotations.piboCategories),
+    createPiboCategory: (name, parent) => api.post(apiEndpoints.quotations.piboCategories, { name, parent }),
+    getServiceCategories: () => api.get(apiEndpoints.quotations.serviceCategories),
+    createServiceCategory: (name) => api.post(apiEndpoints.quotations.serviceCategories, { name })
   },
   teams: {
     getList: () => api.get(apiEndpoints.teams.list),
@@ -100,7 +111,40 @@ export const apiService = {
     getList: () => api.get(apiEndpoints.notifications.list),
     markRead: (id) => api.patch(apiEndpoints.notifications.markRead(id)),
     markAllRead: () => api.patch(apiEndpoints.notifications.readAll)
+  },
+  media: {
+    signature: (payload) => api.post(apiEndpoints.media.signature, payload)
   }
 }
+
+export async function uploadMedia(file, section = 'general') {
+  if (!(file instanceof File)) throw new Error('A file is required');
+  const { data } = await apiService.media.signature({ name: file.name, type: file.type || 'application/octet-stream', size: file.size, section });
+  const form = new FormData();
+  form.append('file', file);
+  form.append('api_key', data.apiKey);
+  Object.entries(data.params || {}).forEach(([key, value]) => form.append(key, String(value)));
+  const response = await fetch(data.uploadUrl, { method: 'POST', body: form });
+  const uploaded = await response.json();
+  if (!response.ok || !uploaded.secure_url) throw new Error(uploaded.error?.message || 'Cloudinary upload failed');
+  return {
+    name: file.name,
+    type: file.type || uploaded.resource_type,
+    url: uploaded.secure_url,
+    secureUrl: uploaded.secure_url,
+    storageKey: uploaded.public_id,
+    publicId: uploaded.public_id,
+    resourceType: uploaded.resource_type,
+    format: uploaded.format || '',
+    size: uploaded.bytes || file.size,
+    width: uploaded.width,
+    height: uploaded.height,
+    duration: uploaded.duration,
+    uploadedAt: uploaded.created_at || new Date().toISOString(),
+    provider: 'cloudinary'
+  };
+}
+
+export const uploadMediaFiles = (files, section) => Promise.all([...files].map((file) => uploadMedia(file, section)));
 
 export default api

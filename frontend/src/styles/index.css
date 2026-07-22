@@ -456,3 +456,57 @@ button.lead-story-card:hover {
     transform: translateY(0) scale(1);
   }
 }
+
+/* Soft moving light grid behind the profile content. */
+.profile-modal-surface {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 18% 24%, rgba(16, 185, 129, 0.1), transparent 32%),
+    radial-gradient(circle at 88% 82%, rgba(249, 115, 22, 0.08), transparent 30%),
+    #f8fffc;
+}
+
+.profile-modal-surface::before,
+.profile-modal-surface::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.profile-modal-surface::before {
+  background-image:
+    linear-gradient(90deg, rgba(13, 148, 136, 0.09) 1px, transparent 1px),
+    linear-gradient(rgba(13, 148, 136, 0.09) 1px, transparent 1px);
+  background-size: 28px 28px;
+  animation: profile-grid-drift 12s linear infinite;
+}
+
+.profile-modal-surface::after {
+  width: 42%;
+  left: -50%;
+  background: linear-gradient(105deg, transparent 18%, rgba(255, 255, 255, 0.08) 35%, rgba(110, 231, 183, 0.25) 50%, rgba(255, 255, 255, 0.55) 56%, transparent 74%);
+  filter: blur(10px);
+  transform: skewX(-12deg);
+  animation: profile-light-sweep 7s ease-in-out infinite;
+}
+
+@keyframes profile-grid-drift {
+  to { background-position: 28px 28px; }
+}
+
+@keyframes profile-light-sweep {
+  0%, 12% { left: -50%; opacity: 0; }
+  28% { opacity: 0.85; }
+  72% { opacity: 0.85; }
+  88%, 100% { left: 112%; opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile-modal-surface::before,
+  .profile-modal-surface::after {
+    animation: none;
+  }
+}

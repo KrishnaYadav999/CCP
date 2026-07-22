@@ -8,6 +8,8 @@ const asyncHandler = require('../utils/asyncHandler');
 router.post('/request-otp', asyncHandler(authCtrl.requestOtp));
 router.post('/resend-otp', asyncHandler(authCtrl.resendOtp));
 router.post('/verify-otp', asyncHandler(authCtrl.verifyOtp));
+router.post('/forgot-password', asyncHandler(authCtrl.forgotPassword));
+router.post('/reset-password', asyncHandler(authCtrl.resetPassword));
 router.get('/me', requireAuth, asyncHandler(authCtrl.me));
 router.put('/me', requireAuth, asyncHandler(authCtrl.updateMe));
 router.put('/me/password', requireAuth, asyncHandler(authCtrl.updatePassword));
