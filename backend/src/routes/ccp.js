@@ -14,6 +14,8 @@ const asyncHandler = require('../utils/asyncHandler');
 const ccpLeadController = require('../controllers/ccpLeadController');
 const clientController = require('../controllers/clientController');
 const requireCcpSharedKey = require('../middleware/ccpSharedKey');
+const strictCcpApiKey = require('../middleware/strictCcpApiKey');
+const clientSyncController = require('../controllers/clientSyncController');
 
 const router = express.Router();
 
@@ -166,22 +168,13 @@ router.get('/clients', (req, res) => runPublicRead(
  normalizeClientForCrm
 ));
 
-router.get('/clients/reconciliation', asyncHandler(async (req, res) => {
-  const clients = await Client.find({}).select('data.importMeta.uniqueId data.importMeta.leadNumber data.importMeta.ccpClientId').lean();
-  const identities = clients.map((client) => ({
-    clientId: String(client._id),
-    uniqueId: String(client.data?.importMeta?.uniqueId || ''),
-    leadNumber: String(client.data?.importMeta?.leadNumber || ''),
-    ccpClientId: String(client.data?.importMeta?.ccpClientId || '')
-  }));
-  res.json({ ok: true, source: 'ccp', count: clients.length, identities, generatedAt: new Date().toISOString() });
-}));
+router.get('/clients/reconciliation', strictCcpApiKey, asyncHandler(clientSyncController.reconcile));
 
 // CRM-originated Client Master records are written only to CCP. The router-level
 // shared-key guard protects these service-to-service endpoints; a CCP user JWT is
 // optional so CRM imports can preserve their own creator identity fields.
 router.post('/clients', asyncHandler(clientController.createClient));
-router.post('/clients/bulk', asyncHandler(clientController.bulkCreateClients));
+router.post('/clients/bulk', strictCcpApiKey, asyncHandler(clientSyncController.bulkUpsert));
 router.post('/clients/years/bulk', asyncHandler(clientController.bulkUpdateClientYears));
 router.put('/clients/:id', asyncHandler(clientController.updateClient));
 

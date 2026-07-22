@@ -4,6 +4,8 @@ import {
   ArrowLeft,
   CalendarDays,
   ClipboardList,
+  Database,
+  Download,
   Mail,
   Plus,
   RefreshCw,
@@ -76,6 +78,9 @@ export default function AdminDashboard() {
   const [editForm, setEditForm] = useState(defaultUserForm)
   const [profileOpen, setProfileOpen] = useState(false)
   const [resyncing, setResyncing] = useState('')
+  const [syncRuns, setSyncRuns] = useState([])
+  const [syncStoredCount, setSyncStoredCount] = useState(0)
+  const [syncQuery, setSyncQuery] = useState('')
   const navigate = useNavigate()
   const location = useLocation()
   const isHome = new URLSearchParams(location.search).get('section') === 'home'
@@ -141,13 +146,16 @@ export default function AdminDashboard() {
         setCurrentUser(user)
       }
 
-      const [usersResponse, teamsResponse] = await Promise.all([
+      const [usersResponse, teamsResponse, syncResponse] = await Promise.all([
         adminRoles.includes(user.role) ? apiService.auth.getAdminUsers() : apiService.auth.getUsers(),
-        apiService.teams.getList()
+        apiService.teams.getList(),
+        adminRoles.includes(user.role) ? apiService.clients.getSyncRuns() : Promise.resolve({ data: { runs: [], ccpStoredCount: 0 } })
       ])
 
       setUsers(usersResponse.data.users || [])
       setTeams(teamsResponse.data.teams || [])
+      setSyncRuns(syncResponse.data.runs || [])
+      setSyncStoredCount(syncResponse.data.ccpStoredCount || 0)
     } catch (err) {
       if (!silent) {
         setError(getApiErrorMessage(err, 'Unable to load dashboard'))
@@ -269,6 +277,17 @@ export default function AdminDashboard() {
     } finally {
       setResyncing('')
     }
+  }
+
+  function downloadSyncFailures(run) {
+    const escape = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`
+    const csv = ['Row,Unique ID,CRM Client ID,Error', ...(run.failedRecords || []).map((item) => [item.row, item.uniqueId, item.crmClientId, item.error].map(escape).join(','))].join('\n')
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `crm-client-sync-failures-${run.syncRunId}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
   }
 
   async function handleUpdateProfile(profile) {
@@ -498,6 +517,17 @@ export default function AdminDashboard() {
 
               <KpiSummary metrics={metrics} />
 
+              {canManageUsers && (
+                <ClientSyncPanel
+                  runs={syncRuns}
+                  storedCount={syncStoredCount}
+                  query={syncQuery}
+                  onQueryChange={setSyncQuery}
+                  onRefresh={loadDashboard}
+                  onDownload={downloadSyncFailures}
+                />
+              )}
+
               <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div className="flex flex-col gap-4 border-b border-slate-100 p-4 xl:flex-row xl:items-center xl:justify-between">
                   <div className="relative w-full xl:max-w-md">
@@ -717,5 +747,89 @@ export default function AdminDashboard() {
         />
       )}
     </main>
+  )
+}
+
+function ClientSyncPanel({ runs, storedCount, query, onQueryChange, onRefresh, onDownload }) {
+  const latest = runs[0]
+  const normalizedQuery = query.trim().toLowerCase()
+  const filteredRuns = runs.filter((run) => !normalizedQuery || [
+    run.syncRunId,
+    run.status,
+    ...(run.processedIds || []),
+    ...(run.missingIds || [])
+  ].some((value) => String(value || '').toLowerCase().includes(normalizedQuery)))
+  const metrics = [
+    ['Expected CRM', latest?.expectedTotal ?? '—'],
+    ['CCP stored', storedCount],
+    ['Created', latest?.createdCount ?? 0],
+    ['Updated', latest?.updatedCount ?? 0],
+    ['Failed', latest?.failedCount ?? 0]
+  ]
+
+  return (
+    <section className="mt-6 overflow-hidden rounded-2xl border border-teal-200 bg-white shadow-sm">
+      <div className="flex flex-col gap-4 border-b border-teal-100 bg-gradient-to-r from-teal-50 via-cyan-50 to-emerald-50 p-5 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-start gap-3">
+          <span className="rounded-xl bg-teal-700 p-3 text-white"><Database className="h-5 w-5" /></span>
+          <div>
+            <h2 className="text-lg font-black text-slate-900">CRM Client Synchronization</h2>
+            <p className="mt-1 text-sm font-semibold text-slate-600">Last synchronization: {latest ? formatDateTime(latest.completedAt || latest.startedAt) : 'No synchronization yet'}</p>
+          </div>
+        </div>
+        <button type="button" onClick={onRefresh} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-teal-200 bg-white px-4 font-black text-teal-800 hover:bg-teal-50">
+          <RefreshCw className="h-4 w-4" /> Refresh
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 p-5 md:grid-cols-5">
+        {metrics.map(([label, value]) => (
+          <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-black uppercase tracking-wider text-slate-500">{label}</p>
+            <p className="mt-2 text-2xl font-black text-teal-900">{value}</p>
+          </div>
+        ))}
+      </div>
+
+      {latest && (
+        <div className="mx-5 mb-5 rounded-xl border border-slate-200 p-4 text-sm">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className={`rounded-full px-3 py-1 text-xs font-black ${latest.status === 'RECONCILED' ? 'bg-emerald-100 text-emerald-800' : latest.status === 'FAILED' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>{latest.status}</span>
+            <span className="font-mono text-xs text-slate-600">{latest.syncRunId}</span>
+          </div>
+          <p className="mt-3 font-bold text-slate-700">Missing CRM IDs: {(latest.missingIds || []).length ? latest.missingIds.join(', ') : 'None reported'}</p>
+          <p className="mt-1 font-bold text-slate-700">Unexpected CCP IDs: {(latest.unexpectedIds || []).length ? latest.unexpectedIds.join(', ') : 'None reported'}</p>
+        </div>
+      )}
+
+      <div className="border-t border-slate-100 p-5">
+        <div className="relative mb-4 max-w-lg">
+          <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search run, status or client ID" className="h-11 w-full rounded-xl border border-slate-200 pl-11 pr-4 font-semibold outline-none focus:border-teal-400 focus:ring-4 focus:ring-teal-100" />
+        </div>
+        <div className="overflow-x-auto rounded-xl border border-slate-200">
+          <table className="min-w-[920px] w-full text-left text-sm">
+            <thead className="border-b border-teal-200 bg-gradient-to-r from-teal-50 to-cyan-50 text-xs uppercase tracking-wider text-teal-900">
+              <tr>{['Started', 'Sync Run ID', 'Status', 'Expected', 'Created', 'Updated', 'Failed', 'Report'].map((heading) => <th key={heading} className="px-4 py-3 font-black">{heading}</th>)}</tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {filteredRuns.map((run) => (
+                <tr key={run.syncRunId} className="hover:bg-teal-50/40">
+                  <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-600">{formatDateTime(run.startedAt)}</td>
+                  <td className="max-w-[230px] truncate px-4 py-3 font-mono text-xs text-slate-600" title={run.syncRunId}>{run.syncRunId}</td>
+                  <td className="px-4 py-3 font-black text-teal-800">{run.status}</td>
+                  <td className="px-4 py-3 font-bold">{run.expectedTotal}</td>
+                  <td className="px-4 py-3 font-bold">{run.createdCount}</td>
+                  <td className="px-4 py-3 font-bold">{run.updatedCount}</td>
+                  <td className="px-4 py-3 font-bold text-red-700">{run.failedCount}</td>
+                  <td className="px-4 py-3"><button type="button" disabled={!(run.failedRecords || []).length} onClick={() => onDownload(run)} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 font-black text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"><Download className="h-4 w-4" /> CSV</button></td>
+                </tr>
+              ))}
+              {!filteredRuns.length && <tr><td colSpan="8" className="px-4 py-8 text-center font-semibold text-slate-500">No synchronization runs found.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   )
 }

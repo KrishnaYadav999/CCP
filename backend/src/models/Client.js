@@ -61,6 +61,14 @@ function normalizeClientData(data = {}) {
 
 const ClientSchema = new mongoose.Schema({
   integrationKey: { type: String, trim: true, unique: true, sparse: true, select: false },
+  syncIdentity: {
+    normalizedUniqueId: { type: String, trim: true, lowercase: true },
+    crmClientId: { type: String, trim: true, lowercase: true },
+    ccpClientId: { type: String, trim: true, lowercase: true },
+    leadNumber: { type: String, trim: true, lowercase: true },
+    lastSyncRunId: { type: String, trim: true },
+    lastSyncedAt: { type: Date }
+  },
   selectedLead: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead' },
   adminControls: {
     approvalStatus: { type: String, enum: ['PENDING', 'APPROVED', 'REJECTED'], default: 'PENDING' },
@@ -85,6 +93,11 @@ const ClientSchema = new mongoose.Schema({
   createdByEmail: { type: String, trim: true, lowercase: true },
   createdByCrmUserId: { type: String, trim: true }
 }, { timestamps: true });
+
+ClientSchema.index({ 'syncIdentity.normalizedUniqueId': 1 }, { unique: true, sparse: true, name: 'uniq_sync_unique_id' });
+ClientSchema.index({ 'syncIdentity.crmClientId': 1 }, { unique: true, sparse: true, name: 'uniq_sync_crm_client_id' });
+ClientSchema.index({ 'syncIdentity.ccpClientId': 1 }, { sparse: true, name: 'idx_sync_ccp_client_id' });
+ClientSchema.index({ 'syncIdentity.leadNumber': 1 }, { sparse: true, name: 'idx_sync_lead_number' });
 
 ClientSchema.pre('validate', function normalizeDataBeforeValidate(next) {
   this.data = normalizeClientData(this.data || {});

@@ -58,6 +58,7 @@ exports.createUploadSignature = async (req, res) => {
 };
 
 exports.rejectEmbeddedMedia = (req, res, next) => {
+  if (req.path === '/api/ccp/clients/bulk') return next();
   if (!['POST', 'PUT', 'PATCH'].includes(req.method) || !containsEmbeddedMedia(req.body)) return next();
   return res.status(400).json({ error: 'Embedded base64 media is not allowed. Upload the file to Cloudinary first.' });
 };

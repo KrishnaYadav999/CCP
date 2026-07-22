@@ -24,7 +24,8 @@ const apiEndpoints = {
     detail: (id) => `/clients/${id}`,
     years: (id) => `/clients/${id}/years`,
     annualReturn: (id) => `/clients/${id}/annual-return`,
-    annualAccess: (id, year) => `/clients/${id}/annual-return/${year}/access`
+    annualAccess: (id, year) => `/clients/${id}/annual-return/${year}/access`,
+    syncRuns: '/clients/sync-runs'
   },
   quotations: {
     list: '/quotations',

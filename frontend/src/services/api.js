@@ -89,7 +89,8 @@ export const apiService = {
     updateYears: (id, payload) => api.patch(apiEndpoints.clients.years(id), payload),
     getAnnualReturn: (id) => api.get(apiEndpoints.clients.annualReturn(id)),
     saveAnnualReturn: (id, payload) => api.put(apiEndpoints.clients.annualReturn(id), payload),
-    getAnnualAccess: (id, year) => api.get(apiEndpoints.clients.annualAccess(id, year))
+    getAnnualAccess: (id, year) => api.get(apiEndpoints.clients.annualAccess(id, year)),
+    getSyncRuns: () => api.get(apiEndpoints.clients.syncRuns)
   },
   quotations: {
     getList: () => api.get(apiEndpoints.quotations.list),

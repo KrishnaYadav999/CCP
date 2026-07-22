@@ -6,6 +6,7 @@ const { ADMIN_ROLES } = require('../constants/roles');
 const asyncHandler = require('../utils/asyncHandler');
 
 router.get('/', requireAuth, asyncHandler(clientCtrl.listClients));
+router.get('/sync-runs', requireAuth, requireRoles(ADMIN_ROLES), asyncHandler(require('../controllers/clientSyncController').listRuns));
 router.post('/bulk', requireAuth, requireRoles(ADMIN_ROLES), asyncHandler(clientCtrl.bulkCreateClients));
 router.post('/years/bulk', requireAuth, requireRoles(ADMIN_ROLES), asyncHandler(clientCtrl.bulkUpdateClientYears));
 router.post('/', requireAuth, asyncHandler(clientCtrl.createClient));
