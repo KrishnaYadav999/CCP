@@ -118,6 +118,7 @@ const LeadSchema = new mongoose.Schema({
   createdByEmail: { type: String, trim: true, lowercase: true, immutable: true },
   createdByCrmUserId: { type: String, trim: true, immutable: true },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
+  updatedByText: { type: String, trim: true },
   updatedByName: { type: String, trim: true },
   updatedByEmail: { type: String, trim: true, lowercase: true },
   updatedByCrmUserId: { type: String, trim: true },

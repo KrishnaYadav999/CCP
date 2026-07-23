@@ -7,9 +7,10 @@ function text(value) { return String(value || '').trim(); }
 function inputIdentity(input, prefix) {
   const raw = input?.[prefix];
   const object = raw && typeof raw === 'object' ? raw : {};
+  const rawId = text(raw);
   return {
-    id: text(object._id || object.id || (mongoose.Types.ObjectId.isValid(text(raw)) ? raw : '')),
-    crmUserId: text(object.crmUserId || input?.[`${prefix}CrmUserId`] || (!mongoose.Types.ObjectId.isValid(text(raw)) ? raw : '')),
+    id: text(object._id || object.id || (/^[a-f\d]{24}$/i.test(rawId) && mongoose.Types.ObjectId.isValid(rawId) ? rawId : '')),
+    crmUserId: text(object.crmUserId || input?.[`${prefix}CrmUserId`]),
     email: text(object.email || input?.[`${prefix}Email`]).toLowerCase(),
     name: text(object.name || input?.[`${prefix}Text`] || (prefix === 'assignedTo' ? input?.assignedToText : ''))
   };

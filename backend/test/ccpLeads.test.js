@@ -74,6 +74,37 @@ test('single lead creation normalizes fields and generates stable CCP identities
   assert.equal(lead.leadCode, 'ATPL-0001');
 });
 
+test('creating a lead with blank closedBy succeeds and does not store closedBy', async () => {
+  const models = fakeModels();
+  const lead = await controller._test.saveLead({ sourceLeadId: ' CRM-blank-closed ', company: ' Acme ', closedBy: '' }, {}, models);
+  assert.equal(lead._id, 'ccp-1');
+  assert.equal(Object.prototype.hasOwnProperty.call(lead, 'closedBy'), false);
+});
+
+test('ObjectId reference sanitizer preserves names and emails outside reference fields', () => {
+  const data = controller._test.sanitizeObjectIdReferences({
+    assignedTo: 'Asha Rao',
+    closedBy: 'closer@example.com',
+    updatedBy: '',
+    createdBy: 'not-an-object-id',
+    importedBy: 'also-not-an-object-id'
+  });
+  assert.equal(data.assignedTo, undefined);
+  assert.equal(data.assignedToText, 'Asha Rao');
+  assert.equal(data.closedBy, undefined);
+  assert.equal(data.closedByEmail, 'closer@example.com');
+  assert.equal(data.updatedBy, undefined);
+  assert.equal(data.createdBy, undefined);
+  assert.equal(data.createdByName, 'not-an-object-id');
+});
+
+test('valid ObjectId reference values are kept even without a resolved user', async () => {
+  const models = fakeModels();
+  const id = '507f1f77bcf86cd799439011';
+  const lead = await controller._test.saveLead({ sourceLeadId: ' CRM-valid-ref ', company: ' Acme ', assignedTo: id }, {}, models);
+  assert.equal(lead.assignedTo, id);
+});
+
 test('525-row bulk-equivalent upload succeeds and retry creates no duplicates', async () => {
   const models = fakeModels();
   const legacyCategories = ['PRODUCER', 'BRAND OWNER', 'BRAND_OWNER', 'IMPORTER', 'PWP', 'RECYCLER', 'REFURBISHER', 'SIMP_PRODUCER', 'SIMP_IMPORTER_RAW', 'SIMP_MANUFACTURER_RAW', 'SIMP_SELLER'];

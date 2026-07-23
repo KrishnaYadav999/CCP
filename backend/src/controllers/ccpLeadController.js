@@ -15,7 +15,7 @@ const FIELDS = [
   'assignedTo', 'assignedToCrmUserId', 'assignedBy', 'assignedByName',
   'assignedByEmail', 'assignedByUserId', 'assignedAt', 'importedCreatedBy',
   'createdBy', 'createdByName', 'createdByCrmUserId', 'createdByEmail', 'updatedBy', 'updatedByEmail',
-  'updatedByCrmUserId', 'closedBy', 'closedByText', 'closedByEmail',
+  'updatedByText', 'updatedByCrmUserId', 'closedBy', 'closedByText', 'closedByEmail',
   'closedByCrmUserId', 'closedAt', 'leadDate', 'nextFollowUpDate',
   'nextFollowUpTime', 'followUpRemarks', 'importedCreatedAt',
   'importedUpdatedAt', 'importedBy', 'importedByName', 'importedByEmail',
@@ -76,7 +76,7 @@ function normalizePayload(input = {}, { excel = false, preserveWorkflow = false 
       data.piboCategory = typeof legacyCategory === 'string' ? legacyCategory.trim() : legacyCategory;
     }
   }
-  for (const field of ['emails', 'assignedToEmail', 'assignedByEmail', 'createdByEmail', 'importedByEmail']) {
+  for (const field of ['emails', 'assignedToEmail', 'assignedByEmail', 'createdByEmail', 'updatedByEmail', 'closedByEmail', 'importedByEmail']) {
     if (typeof data[field] === 'string') data[field] = data[field].toLowerCase();
   }
   if (typeof data.piboParent === 'string') data.piboParent = data.piboParent.toUpperCase();
@@ -84,6 +84,34 @@ function normalizePayload(input = {}, { excel = false, preserveWorkflow = false 
   if (excel) data.workflowStatus = 'draft';
   else if (!preserveWorkflow || data.workflowStatus !== undefined) {
     data.workflowStatus = data.workflowStatus === 'submitted' ? 'submitted' : 'draft';
+  }
+  return data;
+}
+
+function isValidObjectId(value) {
+  return typeof value === 'string' && /^[a-f\d]{24}$/i.test(value) && mongoose.Types.ObjectId.isValid(value);
+}
+
+function preserveReferenceText(data, field, value) {
+  const raw = String(value || '').trim();
+  if (!raw) return;
+  const textKey = field === 'assignedTo' ? 'assignedToText' : field === 'createdBy' ? 'createdByName' : `${field}Text`;
+  const emailKey = `${field}Email`;
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
+    if (!data[emailKey]) data[emailKey] = raw.toLowerCase();
+  } else if (!data[textKey]) data[textKey] = raw;
+}
+
+function sanitizeObjectIdReferences(data) {
+  for (const field of ['assignedTo', 'closedBy', 'updatedBy', 'createdBy']) {
+    const value = data[field];
+    if (value === undefined) continue;
+    if (isValidObjectId(String(value).trim())) {
+      data[field] = String(value).trim();
+      continue;
+    }
+    if (typeof value === 'string') preserveReferenceText(data, field, value);
+    delete data[field];
   }
   return data;
 }
@@ -128,7 +156,7 @@ async function mapCrmUser(data, input, prefix, models = { User }, { required = f
   if (!hasInput) return null;
   const { user } = await resolveLeadUser(input, prefix, models.User, { activeOnly: true });
   if (!user) {
-    delete data[prefix];
+    if (!isValidObjectId(String(data[prefix] || '').trim())) delete data[prefix];
     if (required) {
       const error = new Error(`${prefix === 'closedBy' ? 'Lead Closed By' : prefix} must resolve to an active CCP user`);
       error.statusCode = 400;
@@ -138,6 +166,7 @@ async function mapCrmUser(data, input, prefix, models = { User }, { required = f
   }
   if (prefix === 'updatedBy') {
     data.updatedBy = user._id;
+    data.updatedByText = user.name || user.email || '';
     data.updatedByName = user.name || user.email || '';
     data.updatedByEmail = user.email || '';
     data.updatedByCrmUserId = user.crmUserId || '';
@@ -174,6 +203,7 @@ async function applyImportedAudit(data, input, models, importer) {
 
 async function saveLead(input, options = {}, models = { Lead, User }) {
   const data = normalizePayload(input, options);
+  sanitizeObjectIdReferences(data);
   const error = validatePayload(data);
   if (error) {
     const validationError = new Error(error);
@@ -181,8 +211,9 @@ async function saveLead(input, options = {}, models = { Lead, User }) {
     throw validationError;
   }
   await mapCrmUser(data, input, 'assignedTo', models);
-  await mapCrmUser(data, input, 'closedBy', models, { required: Boolean(input.closedBy || input.closedByText || input.closedByEmail || input.closedByCrmUserId) });
+  await mapCrmUser(data, input, 'closedBy', models);
   await mapCrmUser(data, input, 'updatedBy', models);
+  sanitizeObjectIdReferences(data);
   if (data.assignedTo && (!options.excel || !data.assignedAt)) data.assignedAt = new Date();
   if (data.closedBy && !data.closedAt) data.closedAt = new Date();
   if (options.excel) await applyImportedAudit(data, input, models, options.importer);
@@ -192,6 +223,7 @@ async function saveLead(input, options = {}, models = { Lead, User }) {
     if (creator) data.createdByName = creator.name || creator.email || '';
     else data.createdByName = data.importedCreatedBy || '';
   }
+  sanitizeObjectIdReferences(data);
   const key = integrationKey(data);
   const existingFilter = data.sourceLeadId ? { sourceLeadId: data.sourceLeadId } : { integrationKey: key };
   const existing = await models.Lead.findOne(existingFilter);
@@ -276,6 +308,7 @@ exports.update = async (req, res) => {
     const existing = await Lead.findOne(leadLookup(req.params.id));
     if (!existing) return res.status(404).json({ ok: false, error: 'Lead not found' });
     const data = normalizePayload(req.body, { preserveWorkflow: true });
+    sanitizeObjectIdReferences(data);
     for (const field of ['createdBy', 'createdByName', 'createdByEmail', 'createdByCrmUserId', 'importedCreatedBy', 'importedCreatedAt']) delete data[field];
     const merged = { ...output(existing), ...data };
     const error = validatePayload(merged);
@@ -284,8 +317,9 @@ exports.update = async (req, res) => {
     if (req.body.assignedTo === '' || req.body.assignedTo === null) Object.assign(data, { assignedTo: null, assignedToText: '', assignedToEmail: '', assignedToCrmUserId: '' });
     else await mapCrmUser(data, req.body, 'assignedTo');
     if (req.body.closedBy === '' || req.body.closedBy === null) Object.assign(data, { closedBy: null, closedByText: '', closedByEmail: '', closedByCrmUserId: '', closedAt: null });
-    else await mapCrmUser(data, req.body, 'closedBy', { User }, { required: Boolean(req.body.closedBy || req.body.closedByText || req.body.closedByEmail || req.body.closedByCrmUserId) });
+    else await mapCrmUser(data, req.body, 'closedBy', { User });
     await mapCrmUser(data, req.body, 'updatedBy');
+    sanitizeObjectIdReferences(data);
     if (Object.prototype.hasOwnProperty.call(data, 'assignedTo') && oldAssignee !== String(data.assignedTo || '')) data.assignedAt = new Date();
     if (data.closedBy && !existing.closedAt) data.closedAt = new Date();
     Object.assign(existing, data);
@@ -304,4 +338,4 @@ exports.list = async (req, res) => {
   return res.json({ ok: true, leads: leads.map(output), source: 'ccp-direct' });
 };
 
-exports._test = { FIELDS, normalizePayload, normalizePiboHierarchy, validatePayload, integrationKey, getNextLeadCode, mapCrmUser, applyImportedAudit, saveLead, leadLookup, output };
+exports._test = { FIELDS, normalizePayload, normalizePiboHierarchy, validatePayload, integrationKey, getNextLeadCode, mapCrmUser, applyImportedAudit, sanitizeObjectIdReferences, saveLead, leadLookup, output };
